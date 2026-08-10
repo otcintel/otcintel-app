@@ -5,7 +5,7 @@
  * Does NOT require a live database.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NormalizedFiling, ConvertibleNote } from '../../ingestion/types';
 import { PARSER_VERSION } from '../../universe/types';
 
@@ -54,6 +54,83 @@ function makeConvertibleNote(overrides: Partial<ConvertibleNote> = {}): Converti
     ...overrides,
   };
 }
+
+// Import after mocks
+import { postgresFilingsDb } from '../postgres/filings';
+import { getClient } from '../postgres/client';
+
+// ─── periodOfReport → period_of_report DATE normalization ────────────────────
+// Postgres DATE columns reject empty strings with "invalid input syntax for
+// type date: """. Blank/whitespace periodOfReport must be coerced to NULL.
+
+describe('periodOfReport → period_of_report DATE normalization', () => {
+  let capturedUpsertRows: Array<Record<string, unknown>> = [];
+
+  beforeEach(() => {
+    capturedUpsertRows = [];
+
+    // Build a chainable Supabase mock that captures rows passed to upsert.
+    const mockUpsertSelect = vi.fn().mockResolvedValue({
+      data: [{ id: 'filing-uuid', accession_number: '0001234567-26-000001' }],
+      error: null,
+    });
+    const mockUpsert = vi.fn((rows: Array<Record<string, unknown>>) => {
+      capturedUpsertRows = rows;
+      return { select: mockUpsertSelect };
+    });
+    const mockMaybeSingle = vi.fn().mockResolvedValue({ data: { id: 'company-uuid' }, error: null });
+    const mockEq = vi.fn().mockReturnValue({ maybeSingle: mockMaybeSingle });
+    const mockCompaniesSelect = vi.fn().mockReturnValue({ eq: mockEq });
+    const mockCnUpsert = vi.fn().mockReturnValue({ select: vi.fn().mockResolvedValue({ data: [], error: null }) });
+
+    vi.mocked(getClient).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === 'companies') return { select: mockCompaniesSelect };
+        if (table === 'convertible_notes') return { upsert: mockCnUpsert };
+        return { upsert: mockUpsert };
+      }),
+    } as unknown as ReturnType<typeof getClient>);
+  });
+
+  it('periodOfReport="" is stored as NULL (prevents Postgres DATE parse error)', async () => {
+    await postgresFilingsDb.upsertAll('SHIP', [makeFiling({ periodOfReport: '' })]);
+    expect(capturedUpsertRows[0].period_of_report).toBeNull();
+  });
+
+  it('periodOfReport="   " (whitespace-only) is stored as NULL', async () => {
+    await postgresFilingsDb.upsertAll('SHIP', [makeFiling({ periodOfReport: '   ' })]);
+    expect(capturedUpsertRows[0].period_of_report).toBeNull();
+  });
+
+  it('valid YYYY-MM-DD periodOfReport is stored unchanged', async () => {
+    await postgresFilingsDb.upsertAll('SHIP', [makeFiling({ periodOfReport: '2026-03-31' })]);
+    expect(capturedUpsertRows[0].period_of_report).toBe('2026-03-31');
+  });
+
+  it('periodOfReport that is already NULL from rowToFiling round-trip stays NULL', async () => {
+    // rowToFiling maps null DB column to '' — but filingToUpsertRow normalizes '' → null
+    await postgresFilingsDb.upsertAll('SHIP', [makeFiling({ periodOfReport: '' })]);
+    const firstWrite = capturedUpsertRows[0].period_of_report;
+
+    // Second upsert with the same value — still null (idempotent)
+    await postgresFilingsDb.upsertAll('SHIP', [makeFiling({ periodOfReport: '' })]);
+    const secondWrite = capturedUpsertRows[0].period_of_report;
+
+    expect(firstWrite).toBeNull();
+    expect(secondWrite).toBeNull();
+  });
+
+  it('valid date repeated upsert stays idempotent', async () => {
+    const date = '2026-06-30';
+    await postgresFilingsDb.upsertAll('SHIP', [makeFiling({ periodOfReport: date })]);
+    const first = capturedUpsertRows[0].period_of_report;
+    await postgresFilingsDb.upsertAll('SHIP', [makeFiling({ periodOfReport: date })]);
+    const second = capturedUpsertRows[0].period_of_report;
+    expect(first).toBe(date);
+    expect(second).toBe(date);
+    expect(first).toBe(second);
+  });
+});
 
 // ─── NormalizedFiling structure validation ────────────────────────────────────
 

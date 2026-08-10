@@ -143,7 +143,7 @@ function filingToUpsertRow(
     ticker:                       f.ticker.toUpperCase(),
     form_type:                    f.formType,
     filed_at:                     f.filedAt,
-    period_of_report:             f.periodOfReport ?? null,
+    period_of_report:             f.periodOfReport?.trim() || null,
     document_url:                 f.documentUrl,
     full_text_url:                null,
     source:                       f.source,
