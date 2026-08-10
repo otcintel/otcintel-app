@@ -6,10 +6,15 @@
  *   2. For each company, resolve CIK via EDGAR (already handled by EdgarFilingFetcher)
  *   3. Fetch filing metadata — skip accession numbers already stored (idempotency)
  *   4. Download + parse only new filings
- *   5. Persist to filingsDb + normalizedFilingStore
+ *   5. Persist via the active backend (Postgres on Vercel, filesystem locally)
  *   6. Update company status and confidence scoring
  *   7. Record per-company result in the IngestionRun
  *   8. Continue on per-company failure — never abort the batch
+ *
+ * Persistence is backend-aware:
+ *   PERSISTENCE_BACKEND=postgres — all writes go through the Postgres repository
+ *     layer (no required filesystem writes; Vercel-safe).
+ *   PERSISTENCE_BACKEND=filesystem (default) — writes go to the local JSON store.
  *
  * Designed to run sequentially to stay within EDGAR rate limits.
  */
@@ -18,12 +23,22 @@ import { randomUUID } from 'node:crypto';
 import type { CompanyRecord, IngestionRun, RunResult, IngestionStage } from './types';
 import { PARSER_VERSION } from './types';
 import type { SeedCompany } from './types';
-import { companiesDb, filingsDb, runsDb, intelligenceDb } from '../db';
+import { companiesDb } from '../db';
+import {
+  getCompaniesRepo,
+  getFilingsRepo,
+  getRunsRepo,
+  getIntelligenceRepo,
+} from '../db/repositories';
+import type {
+  ICompaniesRepository,
+  IFilingsRepository,
+  IIntelligenceRepository,
+} from '../db/types';
 import { seedToRecord, applyIngestionResult, getStaleFilings } from './companies';
 import { ingestTicker } from '../ingestion';
 import { normalizedFilingStore } from '../ingestion/store';
 import { generateCompanyIntelligence } from '../ingestion/intelligence/companyIntelligence';
-import { createPostgresSync, type PostgresSync } from '../db/postgresSync';
 
 // ─── Seed loading ─────────────────────────────────────────────────────────────
 
@@ -52,14 +67,6 @@ async function fetchTickerMap(): Promise<typeof _tickerMap> {
 
 function padCik(cik: string | number): string {
   return String(cik).replace(/^CIK/i, '').trim().padStart(10, '0');
-}
-
-async function resolveCik(ticker: string): Promise<{ cik: string; companyName: string }> {
-  const map = await fetchTickerMap();
-  const upper = ticker.toUpperCase();
-  const entry = Object.values(map!).find(e => e.ticker === upper);
-  if (!entry) throw new Error(`Ticker "${ticker}" not found in EDGAR company tickers`);
-  return { cik: padCik(entry.cik_str), companyName: entry.title };
 }
 
 // ─── Seed population ──────────────────────────────────────────────────────────
@@ -126,57 +133,37 @@ export interface BatchIngestionOptions {
   verbose?: boolean;
 }
 
+/** Repositories passed into per-company ingestion */
+interface IngestionRepos {
+  companies: ICompaniesRepository;
+  filings: IFilingsRepository;
+  intelligence: IIntelligenceRepository;
+}
+
 /** Track which batches are currently running to prevent double-starts */
 const _activeRuns = new Set<string>();
 
-// ─── Postgres run-write helpers ───────────────────────────────────────────────
-// Errors are caught and pushed to run.errors so they are surfaced in the run
-// record without aborting the batch.  The filesystem write always happens first.
-
-async function pgRunWrite(pgSync: PostgresSync | null, run: IngestionRun): Promise<void> {
-  if (!pgSync) return;
-  try {
-    await pgSync.upsertRun(run);
-  } catch (err) {
-    run.errors.push(
-      `[pg-sync] run ${run.runId}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
-async function pgResultWrite(
-  pgSync: PostgresSync | null,
-  result: RunResult,
-  run: IngestionRun,
-): Promise<void> {
-  if (!pgSync) return;
-  try {
-    await pgSync.upsertRunResult(result);
-  } catch (err) {
-    run.errors.push(
-      `[pg-sync] run result ${result.ticker} (${result.cik}): ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
 /**
  * Run batch ingestion for the company universe (or a subset).
- * Processes companies sequentially — one at a time — to respect EDGAR rate limits.
- * Safe to call while another batch is running (different run IDs, companies
- * are claimed via status updates before processing begins).
+ *
+ * All persistence goes through backend-aware repositories — Postgres on Vercel,
+ * filesystem locally — so no filesystem write is required in production.
+ *
+ * Processes companies sequentially to respect EDGAR rate limits.
  */
 export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promise<IngestionRun> {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
 
-  // Build Postgres sync before the first run write so every run event is captured.
-  // A failed init is non-fatal — pgSync stays null and the batch runs filesystem-only.
-  let pgSync: PostgresSync | null = null;
-  try {
-    pgSync = await createPostgresSync();
-  } catch {
-    // Errors are recorded after the run object is created below
-  }
+  // Initialize backend-aware repositories once.
+  // On Vercel (PERSISTENCE_BACKEND=postgres) these go to Supabase.
+  // Locally (PERSISTENCE_BACKEND=filesystem) these delegate to the JSON store.
+  const [companiesRepo, filingsRepo, runsRepo, intelligenceRepo] = await Promise.all([
+    getCompaniesRepo(),
+    getFilingsRepo(),
+    getRunsRepo(),
+    getIntelligenceRepo(),
+  ]);
 
   const run: IngestionRun = {
     runId,
@@ -194,15 +181,19 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
     errors:             [],
   };
 
-  runsDb.upsert(run);                        // filesystem: initial 'running' record
-  await pgRunWrite(pgSync, run);             // postgres:   initial 'running' record
+  await runsRepo.upsert(run);
   _activeRuns.add(runId);
 
+  const repos: IngestionRepos = { companies: companiesRepo, filings: filingsRepo, intelligence: intelligenceRepo };
+
   try {
-    // Build target company list
-    const companies = opts.tickers?.length
-      ? opts.tickers.map(t => companiesDb.getByTicker(t)).filter((c): c is CompanyRecord => c != null)
-      : companiesDb.getAll().filter(c =>
+    // Build target company list via the backend-aware repo.
+    // When PERSISTENCE_BACKEND=postgres this reads from Supabase, so the 24
+    // production companies are found even though data/companies.json is empty.
+    const companies: CompanyRecord[] = opts.tickers?.length
+      ? (await Promise.all(opts.tickers.map(t => companiesRepo.getByTicker(t))))
+          .filter((c): c is CompanyRecord => c != null)
+      : (await companiesRepo.getAll()).filter(c =>
           c.ingestionStatus === 'pending' ||
           c.ingestionStatus === 'failed' ||
           c.ingestionStatus === 'stale' ||
@@ -214,14 +205,12 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
     }
 
     run.companiesAttempted = companies.length;
-    runsDb.upsert(run);                      // filesystem: company count set
-    await pgRunWrite(pgSync, run);           // postgres:   company count set
+    await runsRepo.upsert(run);
 
     for (const company of companies) {
-      const result = await ingestOneCompany(company, run, opts, pgSync);
+      const result = await ingestOneCompany(company, run, opts, repos);
 
-      runsDb.upsertResult(result);                 // filesystem: per-company result
-      await pgResultWrite(pgSync, result, run);    // postgres:   per-company result
+      await runsRepo.upsertResult(result);
 
       if (result.status === 'completed') run.companiesCompleted++;
       else if (result.status === 'partial')   run.companiesPartial++;
@@ -232,8 +221,7 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
       run.filingsParsed     += result.filingsParsed;
       run.warningsCount     += result.warningsCount;
 
-      runsDb.upsert(run);                    // filesystem: progress after company
-      await pgRunWrite(pgSync, run);         // postgres:   progress after company
+      await runsRepo.upsert(run);
     }
 
     run.status = run.companiesFailed === run.companiesAttempted && run.companiesAttempted > 0
@@ -248,8 +236,7 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
   }
 
   run.endedAt = new Date().toISOString();
-  runsDb.upsert(run);                        // filesystem: final status
-  await pgRunWrite(pgSync, run);             // postgres:   final status
+  await runsRepo.upsert(run);
   _activeRuns.delete(runId);
 
   return run;
@@ -261,29 +248,27 @@ async function ingestOneCompany(
   company: CompanyRecord,
   run: IngestionRun,
   opts: BatchIngestionOptions,
-  pgSync: PostgresSync | null,
+  repos: IngestionRepos,
 ): Promise<RunResult> {
   const startedAt = new Date().toISOString();
   let stage: IngestionStage = 'ticker_resolution';
 
-  // Mark in-progress so concurrent batches won't double-ingest
-  companiesDb.updateStatus(company.cik, { ingestionStatus: 'ingesting' });
+  await repos.companies.updateStatus(company.cik, { ingestionStatus: 'ingesting' });
 
   try {
     stage = 'sec_fetch';
 
     // Idempotency: skip accession numbers already stored at the current parser
-    // version. Filings whose parserVersion differs from PARSER_VERSION are
-    // excluded from the skip set so they are re-fetched and re-parsed.
-    // opts.forceReparse overrides this entirely and re-parses everything.
+    // version. Stale filings (wrong parser version) are re-fetched and re-parsed.
+    // opts.forceReparse overrides this entirely.
     let skipAccessions: Set<string>;
     if (opts.forceReparse) {
       skipAccessions = new Set<string>();
     } else {
-      const storedFilings = filingsDb.getByTicker(company.ticker);
+      const storedFilings = await repos.filings.getByTicker(company.ticker);
       const staleAccessions = new Set(getStaleFilings(storedFilings).map(f => f.accessionNumber));
-      const allKnown = filingsDb.knownAccessions(company.ticker);
-      // Skip everything except stale filings (those need re-parsing)
+      const allKnown = await repos.filings.knownAccessions(company.ticker);
+      // Remove stale from the skip set so they are re-parsed
       for (const acc of staleAccessions) allKnown.delete(acc);
       skipAccessions = allKnown;
 
@@ -313,73 +298,36 @@ async function ingestOneCompany(
 
     stage = 'persistence';
 
-    // Filesystem write (existing behaviour — errors are non-fatal inside the store)
+    // Keep the in-memory store warm for same-process API reads.
+    // Its internal filesystem write is non-fatal (silently swallowed on EROFS).
     normalizedFilingStore.upsertAll(result.normalized);
 
-    // Postgres dual-write: filings
-    const pgErrors: string[] = [];
-    if (pgSync) {
-      try {
-        await pgSync.upsertFilings(company.ticker, result.normalized);
-      } catch (err) {
-        const msg = `Postgres filings sync for ${company.ticker}: ${err instanceof Error ? err.message : String(err)}`;
-        pgErrors.push(msg);
-        run.errors.push(`[pg-sync] ${msg}`);
-      }
-    }
+    // Authoritative persistence: backend-aware repo write.
+    // On Vercel this goes to Supabase; locally to the JSON file store.
+    await repos.filings.upsertAll(company.ticker, result.normalized);
 
     stage = 'intelligence_aggregation';
 
-    // Load all filings (including previously stored) for confidence scoring + intelligence
-    const allFilings = normalizedFilingStore.getByTicker(company.ticker);
+    // Read all filings for this ticker from the repo — includes historical data
+    // stored in Postgres, not only the filings from the current run.
+    const allFilings = await repos.filings.getByTicker(company.ticker);
     const updated = applyIngestionResult(company, allFilings, discovered);
-    companiesDb.upsert(updated);
-
-    // Postgres dual-write: company record
-    if (pgSync) {
-      try {
-        await pgSync.upsertCompany(updated);
-      } catch (err) {
-        const msg = `Postgres company sync for ${company.ticker}: ${err instanceof Error ? err.message : String(err)}`;
-        pgErrors.push(msg);
-        run.errors.push(`[pg-sync] ${msg}`);
-      }
-    }
-
-    // Persist company intelligence so it survives server restart
-    const intelligence = generateCompanyIntelligence(company.ticker, allFilings);
-    intelligenceDb.upsert(intelligence);
-
-    // Postgres dual-write: intelligence
-    if (pgSync) {
-      try {
-        await pgSync.upsertIntelligence(intelligence);
-      } catch (err) {
-        const msg = `Postgres intelligence sync for ${company.ticker}: ${err instanceof Error ? err.message : String(err)}`;
-        pgErrors.push(msg);
-        run.errors.push(`[pg-sync] ${msg}`);
-      }
-    }
+    await repos.companies.upsert(updated);
+    await repos.intelligence.upsert(generateCompanyIntelligence(company.ticker, allFilings));
 
     const endedAt = new Date().toISOString();
-    const durationMs = Date.parse(endedAt) - Date.parse(startedAt);
-
-    const parseErrors = result.errors;
-    const hasErrors = parseErrors.length > 0 || pgErrors.length > 0;
 
     return {
       runId:             run.runId,
       cik:               company.cik,
       ticker:            company.ticker,
-      status:            hasErrors ? 'partial' : 'completed',
+      status:            result.errors.length > 0 ? 'partial' : 'completed',
       filingsDiscovered: discovered,
       filingsDownloaded: downloaded,
       filingsParsed:     result.parsed,
       warningsCount:     updated.warningsCount,
-      errorMessage:      hasErrors
-        ? [...parseErrors.slice(0, 3), ...pgErrors].join('; ')
-        : undefined,
-      durationMs,
+      errorMessage:      result.errors.length > 0 ? result.errors.slice(0, 3).join('; ') : undefined,
+      durationMs:        Date.parse(endedAt) - Date.parse(startedAt),
       startedAt,
       endedAt,
     };
@@ -388,10 +336,10 @@ async function ingestOneCompany(
     const errorMessage = err instanceof Error ? err.message : String(err);
     const failedStage: IngestionStage = (err as { stage?: IngestionStage }).stage ?? stage;
 
-    companiesDb.updateStatus(company.cik, {
-      ingestionStatus: 'failed',
-      errorMessage,
-    });
+    // Update company status to 'failed' — best-effort, non-fatal
+    try {
+      await repos.companies.updateStatus(company.cik, { ingestionStatus: 'failed', errorMessage });
+    } catch { /* don't mask the original error */ }
 
     if (opts.verbose) {
       console.error(`[batch] ${company.ticker} failed at ${failedStage}: ${errorMessage}`);
