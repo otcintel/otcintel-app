@@ -34,7 +34,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireCronAuth } from '@/lib/api/cronAuth';
 import { runBatchIngestion } from '@/lib/universe/batchIngestor';
-import { companiesDb } from '@/lib/db';
+import { getCompaniesRepo } from '@/lib/db/repositories';
 import {
   selectBatch,
   batchCount,
@@ -46,9 +46,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const unauthorized = requireCronAuth(request);
   if (unauthorized) return unauthorized;
 
-  // Build the sorted ticker universe from the filesystem DB.
-  // companiesDb.getAll() is synchronous and already alphabetically sorted.
-  const allTickers = companiesDb.getAll().map(c => c.ticker);
+  // Use the backend-aware repository so that PERSISTENCE_BACKEND=postgres
+  // sources companies from Supabase on Vercel (where the filesystem is empty).
+  const companiesRepo = await getCompaniesRepo();
+  const allTickers = (await companiesRepo.getAll()).map(c => c.ticker);
   const totalBatches = batchCount(allTickers.length, CRON_BATCH_SIZE);
 
   // Resolve batch index: explicit ?batch=N param takes precedence over

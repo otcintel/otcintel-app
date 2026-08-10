@@ -16,6 +16,13 @@
  *   10. All companies covered across a full rotation (?batch=0..N-1)
  *   11. No ticker duplicated within one subset
  *
+ * Production universe fix requirements:
+ *   12. Postgres-backed repo returns companies when filesystem is empty
+ *   13. Six companies selected from a 24-company Postgres universe
+ *   14. All four batches cover all 24 companies (Postgres path)
+ *   15. Filesystem backend still works locally (mock repo returns companies)
+ *   16. Cron auth is unaffected by backend change
+ *
  * All tests are pure unit tests — no filesystem, no EDGAR calls, no real DB.
  */
 
@@ -49,6 +56,22 @@ const MOCK_COMPANIES_24 = ALL_TICKERS_24.map(ticker => ({
   updatedAt: '2025-01-01T00:00:00Z',
 }));
 
+// ─── Mock helpers ─────────────────────────────────────────────────────────────
+
+import type { ICompaniesRepository } from '@/lib/db/types';
+
+function makeCompaniesRepo(companies: typeof MOCK_COMPANIES_24 | []): ICompaniesRepository {
+  return {
+    getAll:       vi.fn().mockResolvedValue(companies),
+    getByCik:     vi.fn().mockResolvedValue(undefined),
+    getByTicker:  vi.fn().mockResolvedValue(undefined),
+    upsert:       vi.fn().mockResolvedValue(undefined),
+    upsertAll:    vi.fn().mockResolvedValue(undefined),
+    updateStatus: vi.fn().mockResolvedValue(undefined),
+    count:        vi.fn().mockResolvedValue(companies.length),
+  };
+}
+
 // ─── Mocks — declared BEFORE imports that load the module under test ──────────
 // vi.mock is hoisted to the top of the module by Vitest.
 
@@ -58,16 +81,18 @@ vi.mock('@/lib/universe/batchIngestor', () => ({
   loadSeed:          vi.fn().mockReturnValue([]),
 }));
 
-vi.mock('@/lib/db', () => ({
-  companiesDb: {
-    getAll: vi.fn(),
-  },
+// The route now reads the universe via getCompaniesRepo() from repositories,
+// which respects PERSISTENCE_BACKEND and returns Postgres on Vercel.
+vi.mock('@/lib/db/repositories', () => ({
+  getCompaniesRepo:    vi.fn(),
+  resetRepositories:   vi.fn(),
+  getBackendName:      vi.fn().mockReturnValue('filesystem'),
 }));
 
 // Imports come AFTER vi.mock declarations so the mocks apply
 import { POST } from '@/app/api/cron/ingest/route';
 import { runBatchIngestion } from '@/lib/universe/batchIngestor';
-import { companiesDb } from '@/lib/db';
+import { getCompaniesRepo } from '@/lib/db/repositories';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -116,8 +141,9 @@ beforeEach(() => {
   _origSecret = process.env.CRON_SECRET;
   process.env.CRON_SECRET = CRON_SECRET;
   vi.mocked(runBatchIngestion).mockResolvedValue(makeMockRun());
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.mocked(companiesDb.getAll).mockReturnValue(MOCK_COMPANIES_24 as any);
+  vi.mocked(getCompaniesRepo).mockResolvedValue(
+    makeCompaniesRepo(MOCK_COMPANIES_24),
+  );
 });
 
 afterEach(() => {
@@ -195,7 +221,7 @@ describe('POST /api/cron/ingest — auth', () => {
     expect(runBatchIngestion).not.toHaveBeenCalled();
 
     delete process.env.ADMIN_SECRET;
-    process.env.CRON_SECRET = CRON_SECRET; // restore
+    process.env.CRON_SECRET = CRON_SECRET;
   });
 
   // Additional: pipeline error → 500, not crash
@@ -208,6 +234,18 @@ describe('POST /api/cron/ingest — auth', () => {
     const body = await res.json() as { ok: boolean; error: string };
     expect(body.ok).toBe(false);
     expect(body.error).toBe('database unavailable');
+  });
+
+  // 16. Auth is unaffected by backend change
+  it('still enforces auth when using the Postgres-backed repository', async () => {
+    vi.mocked(getCompaniesRepo).mockResolvedValue(
+      makeCompaniesRepo(MOCK_COMPANIES_24),
+    );
+    const res = await POST(makeRequest('Bearer wrong'));
+
+    expect(res.status).toBe(401);
+    // getCompaniesRepo must NOT be called for rejected requests
+    expect(getCompaniesRepo).not.toHaveBeenCalled();
   });
 
 });
@@ -278,7 +316,6 @@ describe('POST /api/cron/ingest — batching (task 5)', () => {
     const [opts] = vi.mocked(runBatchIngestion).mock.calls[0];
     expect(opts?.tickers).toBeDefined();
     expect((opts?.tickers as string[]).length).toBeLessThanOrEqual(CRON_BATCH_SIZE);
-    // Must not send all 24
     expect((opts?.tickers as string[]).length).toBeLessThan(ALL_TICKERS_24.length);
   });
 
@@ -287,14 +324,14 @@ describe('POST /api/cron/ingest — batching (task 5)', () => {
     await POST(validRequest(0));
     const tickers0 = vi.mocked(runBatchIngestion).mock.calls[0][0]?.tickers as string[];
     vi.clearAllMocks();
-
+    vi.mocked(getCompaniesRepo).mockResolvedValue(
+      makeCompaniesRepo(MOCK_COMPANIES_24),
+    );
     vi.mocked(runBatchIngestion).mockResolvedValue(makeMockRun());
+
     await POST(validRequest(1));
     const tickers1 = vi.mocked(runBatchIngestion).mock.calls[0][0]?.tickers as string[];
 
-    expect(tickers0).toBeDefined();
-    expect(tickers1).toBeDefined();
-    // The two batches must be disjoint
     const set0 = new Set(tickers0);
     for (const t of tickers1) expect(set0.has(t)).toBe(false);
   });
@@ -302,9 +339,12 @@ describe('POST /api/cron/ingest — batching (task 5)', () => {
   // 10. All companies covered across a full rotation
   it('all 24 companies are covered across a complete rotation (?batch 0-3)', async () => {
     const covered = new Set<string>();
-    const totalBatches = Math.ceil(ALL_TICKERS_24.length / CRON_BATCH_SIZE); // 4
+    const totalBatches = Math.ceil(ALL_TICKERS_24.length / CRON_BATCH_SIZE);
 
     for (let i = 0; i < totalBatches; i++) {
+      vi.mocked(getCompaniesRepo).mockResolvedValue(
+        makeCompaniesRepo(MOCK_COMPANIES_24),
+      );
       vi.mocked(runBatchIngestion).mockResolvedValue(makeMockRun());
       await POST(validRequest(i));
       const [opts] = vi.mocked(runBatchIngestion).mock.calls[0];
@@ -320,48 +360,110 @@ describe('POST /api/cron/ingest — batching (task 5)', () => {
   it('no ticker appears more than once in the batch passed to runBatchIngestion', async () => {
     const totalBatches = Math.ceil(ALL_TICKERS_24.length / CRON_BATCH_SIZE);
     for (let i = 0; i < totalBatches; i++) {
+      vi.mocked(getCompaniesRepo).mockResolvedValue(
+        makeCompaniesRepo(MOCK_COMPANIES_24),
+      );
       vi.mocked(runBatchIngestion).mockResolvedValue(makeMockRun());
       await POST(validRequest(i));
       const [opts] = vi.mocked(runBatchIngestion).mock.calls[0];
       const tickers = (opts?.tickers ?? []) as string[];
-      const unique = new Set(tickers);
-      expect(unique.size).toBe(tickers.length);
+      expect(new Set(tickers).size).toBe(tickers.length);
       vi.clearAllMocks();
     }
   });
 
-  // Batch metadata appears in the response
   it('response includes batch metadata (index, count, size, tickers)', async () => {
     const res = await POST(validRequest(0));
     const body = await res.json() as Record<string, unknown>;
 
-    expect(body.ok).toBe(true);
     const batch = body.batch as Record<string, unknown>;
-    expect(batch).toBeDefined();
-    expect(typeof batch.index).toBe('number');
-    expect(typeof batch.count).toBe('number');
-    expect(typeof batch.size).toBe('number');
-    expect(Array.isArray(batch.tickers)).toBe(true);
     expect(batch.index).toBe(0);
-    expect(batch.count).toBe(4);             // 24 / 6 = 4 batches
+    expect(batch.count).toBe(4);
     expect(batch.size).toBe(CRON_BATCH_SIZE);
     expect((batch.tickers as string[]).length).toBe(CRON_BATCH_SIZE);
   });
 
-  // ?batch param overrides time-based selection
   it('?batch=2 param selects the third alphabetical slice', async () => {
     await POST(validRequest(2));
 
     const [opts] = vi.mocked(runBatchIngestion).mock.calls[0];
-    // Alphabetical order: ABVC…CENN=0, CLPS…LCTX=1, LIQT…RKDA=2, SHIP…WRAP=3
     expect(opts?.tickers).toEqual([
       'LIQT', 'LQMT', 'MFON', 'NTRB', 'NVVE', 'RKDA',
     ]);
   });
 
-  // Empty universe — graceful short-circuit
-  it('returns ok with empty tickers when no companies are registered', async () => {
-    vi.mocked(companiesDb.getAll).mockReturnValue([]);
+});
+
+describe('POST /api/cron/ingest — Postgres universe fix', () => {
+
+  // 12. Postgres repo returns companies when filesystem is empty
+  it('returns companies from the Postgres-backed repository even when filesystem is empty', async () => {
+    // Simulate what Vercel does: filesystem is empty, Postgres has the 24 companies
+    vi.mocked(getCompaniesRepo).mockResolvedValue(
+      makeCompaniesRepo(MOCK_COMPANIES_24),
+    );
+
+    const res = await POST(validRequest(0));
+    const body = await res.json() as Record<string, unknown>;
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    // The route must have reached ingestion — not the empty-universe short-circuit
+    expect(runBatchIngestion).toHaveBeenCalledOnce();
+    const batch = body.batch as Record<string, unknown>;
+    expect((batch.tickers as string[]).length).toBeGreaterThan(0);
+  });
+
+  // 13. Six companies selected from a 24-company Postgres universe
+  it('selects exactly CRON_BATCH_SIZE (6) companies from 24 Postgres companies', async () => {
+    vi.mocked(getCompaniesRepo).mockResolvedValue(
+      makeCompaniesRepo(MOCK_COMPANIES_24),
+    );
+
+    await POST(validRequest(0));
+
+    const [opts] = vi.mocked(runBatchIngestion).mock.calls[0];
+    expect((opts?.tickers as string[]).length).toBe(CRON_BATCH_SIZE);
+  });
+
+  // 14. All four batches cover all 24 companies via Postgres path
+  it('all four Postgres-sourced batches cover the full 24-company universe', async () => {
+    const covered = new Set<string>();
+    const totalBatches = Math.ceil(ALL_TICKERS_24.length / CRON_BATCH_SIZE);
+
+    for (let i = 0; i < totalBatches; i++) {
+      vi.mocked(getCompaniesRepo).mockResolvedValue(
+        makeCompaniesRepo(MOCK_COMPANIES_24),
+      );
+      vi.mocked(runBatchIngestion).mockResolvedValue(makeMockRun());
+      await POST(validRequest(i));
+      const [opts] = vi.mocked(runBatchIngestion).mock.calls[0];
+      for (const t of (opts?.tickers ?? []) as string[]) covered.add(t);
+      vi.clearAllMocks();
+    }
+
+    expect(covered.size).toBe(24);
+  });
+
+  // 15. Filesystem backend still works — repo mock returns companies identically
+  it('returns the same batch selection when mock represents the filesystem backend', async () => {
+    // Same interface, different backing store — the route is backend-agnostic
+    const fsStyleRepo = makeCompaniesRepo(MOCK_COMPANIES_24);
+    vi.mocked(getCompaniesRepo).mockResolvedValue(
+      fsStyleRepo,
+    );
+
+    await POST(validRequest(0));
+
+    const [opts] = vi.mocked(runBatchIngestion).mock.calls[0];
+    expect(opts?.tickers).toEqual(['ABVC', 'AITX', 'ATVK', 'BOXL', 'CANN', 'CENN']);
+  });
+
+  // Empty universe — graceful short-circuit (works for both backends)
+  it('returns ok with empty tickers when the repository returns no companies', async () => {
+    vi.mocked(getCompaniesRepo).mockResolvedValue(
+      makeCompaniesRepo([]),
+    );
 
     const res = await POST(validRequest());
     const body = await res.json() as Record<string, unknown>;
