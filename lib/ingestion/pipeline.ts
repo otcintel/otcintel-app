@@ -80,6 +80,7 @@ export async function ingestTicker(
   const startedAt = Date.now();
   const errors: string[] = [];
   const normalized: NormalizedFiling[] = [];
+  const processedRawFilings: RawFiling[] = [];
 
   const fetcher = createFilingFetcher();
 
@@ -186,6 +187,7 @@ export async function ingestTicker(
         // Normalize — resolve actual source (edgar vs mock) for this filing
         const norm = normalizeParsedFiling(parsed, resolveSource(fetcher.mode, fetcher));
         normalized.push(norm);
+        processedRawFilings.push(filing);
 
         errors.push(...parsed.parseErrors);
       } catch (err) {
@@ -282,7 +284,7 @@ export async function ingestTicker(
       : undefined;
 
   return {
-    ticker: ticker.toUpperCase(),
+    ticker:      ticker.toUpperCase(),
     normalized,
     fetched:     normalized.length,
     parsed:      normalized.filter(n => n.parseErrors.length === 0).length,
@@ -290,6 +292,7 @@ export async function ingestTicker(
     durationMs,
     indexSource,
     edgarError,
+    rawFilings:  processedRawFilings,
   };
 }
 

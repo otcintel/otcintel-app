@@ -37,8 +37,14 @@ import type {
 } from '../db/types';
 import { seedToRecord, applyIngestionResult, getStaleFilings } from './companies';
 import { ingestTicker } from '../ingestion';
+import type { NormalizedFiling, PipelineResult } from '../ingestion/types';
 import { normalizedFilingStore } from '../ingestion/store';
 import { generateCompanyIntelligence } from '../ingestion/intelligence/companyIntelligence';
+import { fetchCompanyFacts, resetCompanyFactsCache } from '../ingestion/fetchers/edgar/companyFacts';
+import { extractXbrlConcepts } from '../ingestion/parsers/financials/xbrlConcepts';
+import type { XbrlConceptsResult } from '../ingestion/parsers/financials/xbrlConcepts';
+import { detectGoingConcern } from '../ingestion/parsers/financials/goingConcern';
+import { buildFinancialSnapshot } from '../ingestion/parsers/financials/snapshot';
 
 // ─── Seed loading ─────────────────────────────────────────────────────────────
 
@@ -121,6 +127,91 @@ export async function seedCompanyUniverse(): Promise<{
   return { added, skipped, failed };
 }
 
+// ─── Financial snapshot helpers ───────────────────────────────────────────────
+
+const FINANCIAL_SNAPSHOT_FORMS = new Set(['10-K', '10-K/A', '10-Q', '10-Q/A']);
+
+/**
+ * Select the most recently filed 10-K or 10-Q family filing from a list of all
+ * normalized filings for a company. Used as the period anchor for XBRL
+ * extraction and going-concern text analysis.
+ *
+ * Exported for unit testing.
+ */
+export function selectFinancialFiling(
+  allFilings: NormalizedFiling[],
+): NormalizedFiling | undefined {
+  return [...allFilings]
+    .filter(f => FINANCIAL_SNAPSHOT_FORMS.has(f.formType as string))
+    .sort((a, b) => b.filedAt.localeCompare(a.filedAt))[0];
+}
+
+function makeEmptyXbrlResult(): XbrlConceptsResult {
+  return {
+    fiscalPeriod:            undefined,
+    fiscalYear:              undefined,
+    periodEndDate:           undefined,
+    filedAt:                 undefined,
+    accessionNumber:         undefined,
+    cashAndEquivalents:      undefined,
+    currentLiabilities:      undefined,
+    accumulatedDeficit:      undefined,
+    operatingCashFlow:       undefined,
+    operatingCashFlowMonths: undefined,
+    totalDebt:               undefined,
+    totalDebtComponents:     [],
+    xbrlAvailable:           false,
+    missingConcepts:         [],
+  };
+}
+
+/**
+ * Build a FinancialSnapshot for a single company by:
+ *   1. Fetching XBRL company facts from EDGAR (404 → graceful unavailable result).
+ *   2. Extracting XBRL concepts at the most recent financial period.
+ *   3. Running going-concern text detection on the matching filing's text
+ *      when that text is available from the current pipeline run.
+ *   4. Assembling the snapshot via buildFinancialSnapshot.
+ *
+ * Non-fatal: caller wraps this in try/catch and degrades gracefully.
+ */
+async function buildSnapshotForCompany(
+  company:        CompanyRecord,
+  pipelineResult: PipelineResult,
+  allFilings:     NormalizedFiling[],
+): Promise<ReturnType<typeof buildFinancialSnapshot>> {
+  // 1. Fetch XBRL (404 → unavailable, not an error)
+  const factsResult = await fetchCompanyFacts(company.cik);
+
+  // 2. Extract concepts (or use an empty result when XBRL is unavailable)
+  const xbrl: XbrlConceptsResult = factsResult.available
+    ? extractXbrlConcepts(factsResult.facts)
+    : makeEmptyXbrlResult();
+
+  // 3. Going-concern text: use the most recently filed 10-K/10-Q family
+  //    filing whose text was fetched in this pipeline run.  If that filing
+  //    was previously stored (skipAccessions) its text is not in memory —
+  //    skip GC analysis rather than re-fetching.
+  const targetFiling   = selectFinancialFiling(allFilings);
+  const gcResult = targetFiling
+    ? (() => {
+        const rawFiling = pipelineResult.rawFilings?.find(
+          f => f.accessionNumber === targetFiling.accessionNumber,
+        );
+        return rawFiling?.text ? detectGoingConcern(rawFiling.text) : undefined;
+      })()
+    : undefined;
+
+  // 4. Assemble
+  return buildFinancialSnapshot({
+    ticker:   company.ticker,
+    cik:      company.cik,
+    formType: targetFiling?.formType ?? '',
+    xbrl,
+    gc:       gcResult,
+  });
+}
+
 // ─── Batch ingestion ──────────────────────────────────────────────────────────
 
 export interface BatchIngestionOptions {
@@ -183,6 +274,11 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
 
   await runsRepo.upsert(run);
   _activeRuns.add(runId);
+
+  // Reset the XBRL company facts cache once per batch run so stale results
+  // from a previous run do not carry over and every company gets exactly one
+  // EDGAR request in this run.
+  resetCompanyFactsCache();
 
   const repos: IngestionRepos = { companies: companiesRepo, filings: filingsRepo, intelligence: intelligenceRepo };
 
@@ -313,7 +409,24 @@ async function ingestOneCompany(
     const allFilings = await repos.filings.getByTicker(company.ticker);
     const updated = applyIngestionResult(company, allFilings, discovered);
     await repos.companies.upsert(updated);
-    await repos.intelligence.upsert(generateCompanyIntelligence(company.ticker, allFilings));
+
+    const intelligence = generateCompanyIntelligence(company.ticker, allFilings);
+
+    // Build XBRL + going-concern financial snapshot and attach to intelligence.
+    // Non-fatal: financing intelligence is preserved even if snapshot generation
+    // fails (e.g. EDGAR rate-limit spike, transient network error).
+    try {
+      intelligence.financialSnapshot = await buildSnapshotForCompany(company, result, allFilings);
+    } catch (err) {
+      if (opts.verbose) {
+        console.warn(
+          `[batch] ${company.ticker} financial snapshot failed (non-fatal): ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    await repos.intelligence.upsert(intelligence);
 
     const endedAt = new Date().toISOString();
 

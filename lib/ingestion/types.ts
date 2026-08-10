@@ -9,6 +9,7 @@
  */
 
 import type { FilingTerm } from '../types';
+import type { FinancialSnapshot } from './parsers/financials/snapshot';
 
 // ─── SEC form classification ──────────────────────────────────────────────────
 
@@ -723,6 +724,12 @@ export interface PipelineResult {
   indexSource?: 'edgar' | 'mock' | 'third-party';
   /** If edgar-with-fallback mode fell back, the EDGAR error that caused it */
   edgarError?: string;
+  /**
+   * Raw filings processed in this pipeline run, with text populated.
+   * Only present for filings fetched (not skipped) in this run.
+   * Used for going-concern text extraction without re-fetching.
+   */
+  rawFilings?: RawFiling[];
 }
 
 // ─── Company Intelligence ─────────────────────────────────────────────────────
@@ -808,4 +815,11 @@ export interface CompanyIntelligence {
   keyRisks:             CompanyRiskFactor[];
   positiveSignals:      CompanyPositiveSignal[];
   executiveSummary:     string;
+
+  /**
+   * XBRL-sourced financial snapshot with derived liquidity signals.
+   * Present when Phase 7 financial extraction ran for this company.
+   * Undefined when XBRL is unavailable AND text extraction was skipped.
+   */
+  financialSnapshot?: FinancialSnapshot;
 }

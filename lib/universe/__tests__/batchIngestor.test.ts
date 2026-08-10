@@ -76,6 +76,26 @@ vi.mock('@/lib/ingestion/intelligence/companyIntelligence', () => ({
   generateCompanyIntelligence: vi.fn(),
 }));
 
+// Phase 7 Step 5 mocks — prevent any EDGAR/XBRL network calls during existing tests
+vi.mock('@/lib/ingestion/fetchers/edgar/companyFacts', () => ({
+  fetchCompanyFacts:       vi.fn(),
+  resetCompanyFactsCache:  vi.fn(),
+  padCik:                  (cik: string | number) => String(cik).padStart(10, '0'),
+  companyFactsCacheSize:   vi.fn().mockReturnValue(0),
+}));
+
+vi.mock('@/lib/ingestion/parsers/financials/xbrlConcepts', () => ({
+  extractXbrlConcepts: vi.fn(),
+}));
+
+vi.mock('@/lib/ingestion/parsers/financials/goingConcern', () => ({
+  detectGoingConcern: vi.fn(),
+}));
+
+vi.mock('@/lib/ingestion/parsers/financials/snapshot', () => ({
+  buildFinancialSnapshot: vi.fn(),
+}));
+
 // Mock companies helpers to avoid real NormalizedFiling field dependencies in tests
 vi.mock('@/lib/universe/companies', () => ({
   seedToRecord:          vi.fn(),
@@ -86,10 +106,14 @@ vi.mock('@/lib/universe/companies', () => ({
 }));
 
 // Imports after mocks
-import { runBatchIngestion } from '@/lib/universe/batchIngestor';
+import { runBatchIngestion, selectFinancialFiling } from '@/lib/universe/batchIngestor';
 import { getCompaniesRepo, getFilingsRepo, getRunsRepo, getIntelligenceRepo } from '@/lib/db/repositories';
 import { ingestTicker } from '@/lib/ingestion';
 import { generateCompanyIntelligence } from '@/lib/ingestion/intelligence/companyIntelligence';
+import { fetchCompanyFacts, resetCompanyFactsCache } from '@/lib/ingestion/fetchers/edgar/companyFacts';
+import { extractXbrlConcepts } from '@/lib/ingestion/parsers/financials/xbrlConcepts';
+import { detectGoingConcern } from '@/lib/ingestion/parsers/financials/goingConcern';
+import { buildFinancialSnapshot } from '@/lib/ingestion/parsers/financials/snapshot';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -197,7 +221,32 @@ beforeEach(() => {
   vi.mocked(getIntelligenceRepo).mockResolvedValue(mockIntelligenceRepo);
 
   vi.mocked(ingestTicker).mockResolvedValue(MOCK_PIPELINE_RESULT);
-  vi.mocked(generateCompanyIntelligence).mockReturnValue(MOCK_INTELLIGENCE);
+  vi.mocked(generateCompanyIntelligence).mockReturnValue({ ...MOCK_INTELLIGENCE });
+
+  // Phase 7 defaults — prevent network calls in all existing tests
+  vi.mocked(resetCompanyFactsCache).mockReturnValue(undefined);
+  vi.mocked(fetchCompanyFacts).mockResolvedValue({ available: false, reason: 'test default' });
+  vi.mocked(extractXbrlConcepts).mockReturnValue({
+    fiscalPeriod: undefined, fiscalYear: undefined, periodEndDate: undefined,
+    filedAt: undefined, accessionNumber: undefined, cashAndEquivalents: undefined,
+    currentLiabilities: undefined, accumulatedDeficit: undefined, operatingCashFlow: undefined,
+    operatingCashFlowMonths: undefined, totalDebt: undefined, totalDebtComponents: [],
+    xbrlAvailable: false, missingConcepts: [],
+  });
+  vi.mocked(detectGoingConcern).mockReturnValue({
+    goingConcernFlag: false, confidence: 'low', sourceType: 'filing_text',
+  });
+  vi.mocked(buildFinancialSnapshot).mockReturnValue({
+    ticker: 'ABVC', cik: '0001655050', formType: '', accessionNumber: undefined,
+    fiscalPeriod: undefined, fiscalYear: undefined, periodEndDate: undefined,
+    filedAt: undefined, cashAndEquivalents: undefined, currentLiabilities: undefined,
+    accumulatedDeficit: undefined, totalDebt: undefined, totalDebtComponents: [],
+    operatingCashFlow: undefined, operatingCashFlowMonths: undefined,
+    monthlyBurnRate: undefined, cashRunwayMonths: undefined,
+    goingConcernFlag: false, goingConcernSentence: undefined,
+    xbrlAvailable: false, missingConcepts: [],
+    extractedAt: '2026-01-01T00:00:00.000Z', dataSource: 'text',
+  });
 });
 
 afterEach(() => {
@@ -357,7 +406,9 @@ describe('runBatchIngestion — intelligence persistence (test 6: Postgres)', ()
 
     expect(mockIntelligenceRepo.upsert).toHaveBeenCalledOnce();
     const intel = vi.mocked(mockIntelligenceRepo.upsert).mock.calls[0][0];
-    expect(intel).toBe(MOCK_INTELLIGENCE);
+    // generateCompanyIntelligence returns a new object (spread in beforeEach) with
+    // financialSnapshot added — check structural identity, not reference equality.
+    expect(intel).toMatchObject({ ticker: 'ABVC' });
   });
 
   it('generates intelligence from filingsRepo.getByTicker (all historical filings, not only new)', async () => {
@@ -465,6 +516,309 @@ describe('runBatchIngestion — error isolation', () => {
 
     // Both companies were attempted
     expect(ingestTicker).toHaveBeenCalledTimes(2);
+  });
+
+});
+
+// ─── Phase 7 Step 5: Financial snapshot integration tests ─────────────────────
+
+// Additional fixtures for snapshot tests
+const MOCK_10K_FILING = {
+  ticker:          'ABVC',
+  accessionNumber: '0001655050-26-010001',
+  formType:        '10-K',
+  filedAt:         '2026-01-15T00:00:00Z',
+  parserVersion:   PARSER_VERSION,
+} as unknown as NormalizedFiling;
+
+const MOCK_10KA_FILING = {
+  ticker:          'ABVC',
+  accessionNumber: '0001655050-26-020001',
+  formType:        '10-K/A',
+  filedAt:         '2026-02-01T00:00:00Z',
+  parserVersion:   PARSER_VERSION,
+} as unknown as NormalizedFiling;
+
+const GC_TEXT = 'The company raises substantial doubt about its ability to continue as a going concern.';
+
+const MOCK_PIPELINE_WITH_10K = {
+  ticker:     'ABVC',
+  normalized: [MOCK_10K_FILING],
+  fetched:    1,
+  parsed:     1,
+  errors:     [] as string[],
+  durationMs: 0,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rawFilings: [{ accessionNumber: '0001655050-26-010001', text: GC_TEXT } as any],
+};
+
+// ─── selectFinancialFiling — period selection (test 3) ───────────────────────
+
+describe('selectFinancialFiling — most recent 10-K/10-Q selected (test 3)', () => {
+
+  it('returns the most recently filed 10-K', () => {
+    const older = { ...MOCK_10K_FILING, accessionNumber: '0001655050-25-010001', filedAt: '2025-06-30T00:00:00Z' } as unknown as NormalizedFiling;
+    expect(selectFinancialFiling([older, MOCK_10K_FILING])?.accessionNumber)
+      .toBe(MOCK_10K_FILING.accessionNumber);
+  });
+
+  it('returns the most recent when 10-K and 10-Q are both present', () => {
+    const tenQ = { ...MOCK_10K_FILING, accessionNumber: '0001655050-26-030001', formType: '10-Q', filedAt: '2026-03-01T00:00:00Z' } as unknown as NormalizedFiling;
+    expect(selectFinancialFiling([MOCK_10K_FILING, tenQ])?.accessionNumber)
+      .toBe(tenQ.accessionNumber);
+  });
+
+  it('returns undefined when array is empty', () => {
+    expect(selectFinancialFiling([])).toBeUndefined();
+  });
+
+});
+
+// ─── selectFinancialFiling — amendment selection (test 4) ────────────────────
+
+describe('selectFinancialFiling — amendment selection (test 4)', () => {
+
+  it('selects 10-K/A over 10-K when the amendment is more recent', () => {
+    const result = selectFinancialFiling([MOCK_10K_FILING, MOCK_10KA_FILING]);
+    expect(result?.formType).toBe('10-K/A');
+    expect(result?.accessionNumber).toBe(MOCK_10KA_FILING.accessionNumber);
+  });
+
+  it('selects 10-Q/A when it is the most recent financial filing', () => {
+    const tenQA = { ...MOCK_10K_FILING, accessionNumber: '0001655050-26-040001', formType: '10-Q/A', filedAt: '2026-04-01T00:00:00Z' } as unknown as NormalizedFiling;
+    expect(selectFinancialFiling([MOCK_10KA_FILING, tenQA])?.formType).toBe('10-Q/A');
+  });
+
+});
+
+// ─── selectFinancialFiling — 8-K/other forms ignored (test 5) ────────────────
+
+describe('selectFinancialFiling — 8-K and other forms excluded (test 5)', () => {
+
+  it('returns undefined when only 8-K filings are present', () => {
+    expect(selectFinancialFiling([MOCK_FILING])).toBeUndefined();
+  });
+
+  it('returns undefined for S-1', () => {
+    const s1 = { ...MOCK_FILING, formType: 'S-1' } as unknown as NormalizedFiling;
+    expect(selectFinancialFiling([s1])).toBeUndefined();
+  });
+
+  it('still selects the 10-K when mixed with 8-K filings', () => {
+    expect(selectFinancialFiling([MOCK_FILING, MOCK_10K_FILING])?.formType).toBe('10-K');
+  });
+
+});
+
+// ─── Cache reset once per batch (test 1) ─────────────────────────────────────
+
+describe('runBatchIngestion — Company Facts cache reset once per batch (test 1)', () => {
+
+  it('calls resetCompanyFactsCache exactly once even for a multi-company batch', async () => {
+    mockCompaniesRepo = makeCompaniesRepo([MOCK_COMPANY, MOCK_COMPANY_2]);
+    vi.mocked(getCompaniesRepo).mockResolvedValue(mockCompaniesRepo);
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_RESULT });
+
+    await runBatchIngestion({ includeAlreadyParsed: true });
+
+    expect(resetCompanyFactsCache).toHaveBeenCalledOnce();
+  });
+
+});
+
+// ─── Company Facts fetched once per company (test 2) ─────────────────────────
+
+describe('runBatchIngestion — Company Facts fetched once per company (test 2)', () => {
+
+  it('calls fetchCompanyFacts with the company CIK for a single-company batch', async () => {
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(fetchCompanyFacts).toHaveBeenCalledOnce();
+    expect(fetchCompanyFacts).toHaveBeenCalledWith(MOCK_COMPANY.cik);
+  });
+
+  it('calls fetchCompanyFacts once per company in a multi-company batch', async () => {
+    mockCompaniesRepo = makeCompaniesRepo([MOCK_COMPANY, MOCK_COMPANY_2]);
+    vi.mocked(getCompaniesRepo).mockResolvedValue(mockCompaniesRepo);
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_RESULT });
+
+    await runBatchIngestion({ includeAlreadyParsed: true });
+
+    expect(fetchCompanyFacts).toHaveBeenCalledTimes(2);
+    expect(fetchCompanyFacts).toHaveBeenCalledWith(MOCK_COMPANY.cik);
+    expect(fetchCompanyFacts).toHaveBeenCalledWith(MOCK_COMPANY_2.cik);
+  });
+
+});
+
+// ─── XBRL unavailable does not fail ingestion (test 6) ───────────────────────
+
+describe('runBatchIngestion — XBRL unavailable does not fail ingestion (test 6)', () => {
+
+  it('completes successfully when fetchCompanyFacts returns available:false', async () => {
+    // Default mock already returns { available: false } — verify batch still completes
+    const run = await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(run.status).toBe('completed');
+    expect(run.companiesFailed).toBe(0);
+    expect(buildFinancialSnapshot).toHaveBeenCalledOnce();
+  });
+
+});
+
+// ─── Valid snapshot attached to CompanyIntelligence (test 7) ─────────────────
+
+describe('runBatchIngestion — valid snapshot attached to CompanyIntelligence (test 7)', () => {
+
+  it('attaches the built FinancialSnapshot to the intelligence object before upsert', async () => {
+    const SNAPSHOT = {
+      ticker: 'ABVC', cik: '0001655050', formType: '10-K',
+      xbrlAvailable: false, missingConcepts: [], goingConcernFlag: false,
+      totalDebtComponents: [], extractedAt: '2026-01-01T00:00:00.000Z', dataSource: 'text' as const,
+    };
+    vi.mocked(buildFinancialSnapshot).mockReturnValueOnce(SNAPSHOT as unknown as ReturnType<typeof buildFinancialSnapshot>);
+
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
+    vi.mocked(mockFilingsRepo.getByTicker)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    const intel = vi.mocked(mockIntelligenceRepo.upsert).mock.calls[0][0];
+    expect(intel.financialSnapshot).toBe(SNAPSHOT);
+  });
+
+});
+
+// ─── Going concern uses matching financial filing text (test 8) ───────────────
+
+describe('runBatchIngestion — going concern uses matching financial filing text (test 8)', () => {
+
+  it('calls detectGoingConcern with the text of the matching raw filing', async () => {
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
+    vi.mocked(mockFilingsRepo.getByTicker)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(detectGoingConcern).toHaveBeenCalledOnce();
+    expect(detectGoingConcern).toHaveBeenCalledWith(GC_TEXT);
+  });
+
+  it('skips detectGoingConcern when rawFilings is absent (all filings skipped)', async () => {
+    const resultNoRaw = { ...MOCK_PIPELINE_RESULT, rawFilings: undefined };
+    vi.mocked(ingestTicker).mockResolvedValue(resultNoRaw);
+    vi.mocked(mockFilingsRepo.getByTicker)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(detectGoingConcern).not.toHaveBeenCalled();
+  });
+
+});
+
+// ─── financialSnapshot persists through intelligence repo (test 9) ────────────
+
+describe('runBatchIngestion — financialSnapshot persists through intelligence repo (test 9)', () => {
+
+  it('intelligenceRepo.upsert receives the intelligence object with financialSnapshot set', async () => {
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
+    vi.mocked(mockFilingsRepo.getByTicker)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(mockIntelligenceRepo.upsert).toHaveBeenCalledOnce();
+    const intel = vi.mocked(mockIntelligenceRepo.upsert).mock.calls[0][0];
+    expect(intel).toHaveProperty('financialSnapshot');
+    expect(intel.financialSnapshot).toBeDefined();
+  });
+
+});
+
+// ─── Financial snapshot error does not destroy intelligence (test 10) ─────────
+
+describe('runBatchIngestion — financial snapshot error non-fatal (test 10)', () => {
+
+  it('batch completes with status "completed" when buildFinancialSnapshot throws', async () => {
+    vi.mocked(buildFinancialSnapshot).mockImplementationOnce(() => {
+      throw new Error('EDGAR rate limit exceeded');
+    });
+
+    const run = await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(run.status).toBe('completed');
+    expect(run.companiesCompleted).toBe(1);
+    expect(run.companiesFailed).toBe(0);
+  });
+
+  it('intelligenceRepo.upsert is still called even when snapshot generation fails', async () => {
+    vi.mocked(buildFinancialSnapshot).mockImplementationOnce(() => {
+      throw new Error('transient network error');
+    });
+
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(mockIntelligenceRepo.upsert).toHaveBeenCalledOnce();
+    const intel = vi.mocked(mockIntelligenceRepo.upsert).mock.calls[0][0];
+    expect(intel.financialSnapshot).toBeUndefined();
+  });
+
+});
+
+// ─── Postgres production path (test 11) ──────────────────────────────────────
+
+describe('runBatchIngestion — Postgres production path (test 11)', () => {
+
+  it('builds and attaches snapshot on the Postgres backend path', async () => {
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
+    vi.mocked(mockFilingsRepo.getByTicker)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    const run = await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(run.status).toBe('completed');
+    expect(buildFinancialSnapshot).toHaveBeenCalledOnce();
+
+    const intel = vi.mocked(mockIntelligenceRepo.upsert).mock.calls[0][0];
+    expect(intel.financialSnapshot).toBeDefined();
+  });
+
+});
+
+// ─── Filesystem local path (test 12) ─────────────────────────────────────────
+
+describe('runBatchIngestion — filesystem local path (test 12)', () => {
+
+  it('builds and attaches snapshot on the filesystem backend path', async () => {
+    const fsCompaniesRepo = makeCompaniesRepo([MOCK_COMPANY]);
+    const fsFilingsRepo   = makeFilingsRepo([]);
+    const fsRunsRepo      = makeRunsRepo();
+    const fsIntelRepo     = makeIntelligenceRepo();
+
+    vi.mocked(getCompaniesRepo).mockResolvedValue(fsCompaniesRepo);
+    vi.mocked(getFilingsRepo).mockResolvedValue(fsFilingsRepo);
+    vi.mocked(getRunsRepo).mockResolvedValue(fsRunsRepo);
+    vi.mocked(getIntelligenceRepo).mockResolvedValue(fsIntelRepo);
+
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
+    vi.mocked(fsFilingsRepo.getByTicker as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    const run = await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(run.status).toBe('completed');
+    expect(buildFinancialSnapshot).toHaveBeenCalledOnce();
+
+    const intel = vi.mocked(fsIntelRepo.upsert).mock.calls[0][0];
+    expect(intel.financialSnapshot).toBeDefined();
   });
 
 });
