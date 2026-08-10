@@ -6,7 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "eval": "vitest run --config vitest.eval.config.ts",
+    "eval:verbose": "vitest run --config vitest.eval.verbose.config.ts",
+    "db:migrate-data": "tsx scripts/db-migrate-data.ts",
+    "db:verify": "tsx scripts/db-verify.ts"
   },
   "dependencies": {
     "next": "16.2.4",
@@ -14,13 +21,17 @@
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.112.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.11",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

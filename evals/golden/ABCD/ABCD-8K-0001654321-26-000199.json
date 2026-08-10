@@ -1,0 +1,61 @@
+{
+  "$schema": "1.0.0",
+  "id": "ABCD-8K-0001654321-26-000199",
+  "description": "ABCD 8-K: $2M senior convertible note, 20% discount, 10-day lookback, no floor, reset provisions, 8M warrants @ $0.22",
+  "ticker": "ABCD",
+  "cik": "0001654321",
+  "formType": "8-K",
+  "filedAt": "2026-04-03",
+  "accessionNumber": "0001654321-26-000199",
+  "fixtureSource": "mock_rawFilings",
+  "fixtureKey": "ABCD",
+  "fixtureIndex": 0,
+  "evaluationTarget": "ExtractedFinancingTerms",
+  "expected": {
+    "financingType": {
+      "value": "convertible_note",
+      "status": "verified",
+      "note": "Text: 'Senior Convertible Note' via 'Note Purchase Agreement'"
+    },
+    "principalAmount": {
+      "value": 2000000,
+      "status": "verified",
+      "note": "Text: 'in the principal amount of $2,000,000'"
+    },
+    "discountRate": {
+      "value": 0.20,
+      "status": "verified",
+      "note": "Text: '80% of the lowest VWAP during the 10 trading days'. Discount = 1 - 0.80 = 0.20"
+    },
+    "lookbackDays": {
+      "value": 10,
+      "status": "verified",
+      "note": "Text: '10 trading days immediately prior to the conversion date'"
+    },
+    "hasFloorPrice": {
+      "value": false,
+      "status": "verified",
+      "note": "Text: 'There is no floor conversion price under the Note'"
+    },
+    "hasResetProvisions": {
+      "value": true,
+      "status": "verified",
+      "note": "Text: 'anti-dilution and reset provisions that may reduce the conversion price if shares are subsequently issued at prices lower'"
+    },
+    "warrantShares": {
+      "value": 8000000,
+      "status": "verified",
+      "note": "Text: 'warrants to purchase 8,000,000 shares of the Company's common stock'"
+    },
+    "warrantExercisePrice": {
+      "value": 0.22,
+      "status": "verified",
+      "note": "Text: 'at an exercise price of $0.22 per share'"
+    },
+    "investorName": {
+      "value": "Westbridge Capital LLC",
+      "status": "needs_domain_review",
+      "note": "Text: 'Westbridge Capital LLC (the \"Purchaser\")'. Extraction depends on investor name parser patterns."
+    }
+  }
+}

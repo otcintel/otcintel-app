@@ -745,6 +745,14 @@ td.right { text-align: right; }
 }
 .filing-date-label { font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); }
 .filing-source { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); margin-left: auto; }
+.filing-event-summary {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+  margin-bottom: 0.9rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--rule);
+}
 .filing-summary-text { font-size: 0.875rem; color: var(--text-dim); line-height: 1.75; margin-bottom: 1rem; }
 .filing-summary-text strong { color: var(--white); font-weight: 500; }
 
@@ -776,6 +784,121 @@ td.right { text-align: right; }
   color: var(--text-muted);
   border: 1px solid var(--rule-md);
 }
+
+/* ============================================================
+   FINANCING REPORT CARD (10-Q / 10-K expandable section)
+   ============================================================ */
+
+.filing-report-details { margin-top: 0.75rem; }
+.filing-report-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.6rem 0.75rem;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  user-select: none;
+}
+.filing-report-details summary::-webkit-details-marker { display: none; }
+.filing-report-details summary:hover { border-color: var(--accent); color: var(--accent); }
+.filing-report-chevron {
+  font-size: 0.6rem;
+  transition: transform 0.15s ease;
+  color: var(--text-muted);
+}
+.filing-report-details[open] .filing-report-chevron { transform: rotate(90deg); }
+.filing-report-details[open] summary { color: var(--accent); border-color: var(--accent); }
+
+.filing-report-body {
+  padding: 1.25rem 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.report-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+.report-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--rule-md);
+  border-radius: 3px;
+  padding: 0.2rem 0.5rem;
+}
+.report-meta-chip.accent { border-color: var(--accent); color: var(--accent); }
+
+.report-fin-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.report-fin-cell {
+  padding: 0.6rem 0.75rem;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.report-fin-cell:nth-last-child(-n+3):nth-child(3n+1),
+.report-fin-cell:last-child { border-right: none; }
+.report-fin-label {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+.report-fin-val {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--white);
+  font-weight: 500;
+}
+
+.report-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.report-warning-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--amber);
+  line-height: 1.5;
+}
+.report-warning-item.validation { color: var(--amber); }
+.report-warning-item.error { color: #f87171; }
+
+.report-text {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.75;
+  white-space: pre-wrap;
+  font-family: var(--sans);
+}
+.report-text strong { color: var(--white); font-weight: 500; }
 
 /* ============================================================
    PAGE FOOTER

@@ -1,0 +1,56 @@
+{
+  "$schema": "1.0.0",
+  "id": "EFGH-8KA-0002134567-26-000042",
+  "description": "EFGH 8-K/A: Amendment — $500K remaining, 12% discount, 5-day lookback, floor $0.18, no resets",
+  "ticker": "EFGH",
+  "cik": "0002134567",
+  "formType": "8-K/A",
+  "filedAt": "2026-03-22",
+  "accessionNumber": "0002134567-26-000042",
+  "fixtureSource": "mock_rawFilings",
+  "fixtureKey": "EFGH",
+  "fixtureIndex": 0,
+  "evaluationTarget": "ExtractedFinancingTerms",
+  "expected": {
+    "financingType": {
+      "value": "convertible_note",
+      "status": "verified",
+      "note": "Text: 'Convertible Promissory Note' — amendment to existing note"
+    },
+    "discountRate": {
+      "value": 0.12,
+      "status": "verified",
+      "note": "Text: '88% of the lowest VWAP during the 5 trading days'. Discount = 1 - 0.88 = 0.12"
+    },
+    "lookbackDays": {
+      "value": 5,
+      "status": "verified",
+      "note": "Text: '5 trading days immediately preceding the conversion date'"
+    },
+    "hasFloorPrice": {
+      "value": true,
+      "status": "verified",
+      "note": "Text: 'subject to a floor conversion price of $0.18 per share'"
+    },
+    "floorPrice": {
+      "value": 0.18,
+      "status": "verified",
+      "note": "Text: 'floor conversion price of $0.18 per share' and 'conversion price shall not be less than $0.18'"
+    },
+    "hasResetProvisions": {
+      "value": false,
+      "status": "verified",
+      "note": "Text: 'Note does not contain anti-dilution reset provisions. No adjustment to the conversion price will occur based on subsequent issuances'"
+    },
+    "principalAmount": {
+      "value": 500000,
+      "status": "needs_domain_review",
+      "note": "Text: 'remaining principal balance of the Note is $500,000'. Parser may read this as principal amount of the amendment or as the total original note. Domain verification needed."
+    },
+    "investorName": {
+      "value": "Silverton Funding Partners LLC",
+      "status": "needs_domain_review",
+      "note": "Text: 'Silverton Funding Partners LLC (the \"Holder\")'. Extraction depends on investor name parser patterns."
+    }
+  }
+}

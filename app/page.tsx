@@ -30,7 +30,7 @@ export default function LandingPage() {
         </p>
         <div className="hero-actions">
           <a href="#access" className="btn-primary">Request early access</a>
-          <Link href="/company/ABCD" className="btn-ghost">See an example →</Link>
+          <Link href="/company/AITX" className="btn-ghost">See an example →</Link>
         </div>
         <div className="hero-ticker">
           <div className="ticker-track">

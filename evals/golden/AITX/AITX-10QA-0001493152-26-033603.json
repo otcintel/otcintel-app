@@ -1,0 +1,70 @@
+{
+  "$schema": "1.0.0",
+  "id": "AITX-10QA-0001493152-26-033603",
+  "description": "AITX 10-Q/A: Subsequent-event convertible note — $230K, 6% interest, 35% discount (65% of lowest trading price), 20-day lookback",
+  "ticker": "AITX",
+  "cik": "0001498148",
+  "formType": "10-Q/A",
+  "filedAt": "2026-07-17",
+  "accessionNumber": "0001493152-26-033603",
+  "fixtureSource": "stored_output_snapshot",
+  "evaluationTarget": "ConvertibleNote",
+  "noteIndex": 0,
+  "expected": {
+    "principalAmount": {
+      "value": 230000,
+      "status": "verified",
+      "note": "Source text: 'the Company issued a convertible, redeemable note to a lender for $230,000'. Confirmed from _sourceSentenceTexts[0]."
+    },
+    "originalIssueDiscount": {
+      "value": 23000,
+      "status": "verified",
+      "note": "Source text: 'an original issue discount of $23,000'. Confirmed from _sourceSentenceTexts[0]."
+    },
+    "netProceeds": {
+      "value": 200000,
+      "status": "verified",
+      "note": "Source text: 'with cash proceeds of $200,000'. Confirmed from _sourceSentenceTexts[0]."
+    },
+    "interestRate": {
+      "value": 0.06,
+      "status": "verified",
+      "note": "Source text: 'The loan bears interest at 6%'. 6% = 0.06 as 0–1 fraction."
+    },
+    "maturityDate": {
+      "value": "June 3, 2027",
+      "status": "verified",
+      "note": "Source text: 'The note matures on June 3, 2027'. Confirmed from _sourceSentenceTexts[2]."
+    },
+    "executionDate": {
+      "value": "June 3, 2026",
+      "status": "verified",
+      "note": "Source text: 'on June 3, 2026, the Company issued a convertible, redeemable note'. Confirmed from _sourceSentenceTexts[0]."
+    },
+    "lookbackDays": {
+      "value": 20,
+      "status": "verified",
+      "note": "Source text: '20 trading days prior to the conversion date'. Confirmed from _sourceSentenceTexts[2]."
+    },
+    "hasFloorPrice": {
+      "value": false,
+      "status": "verified",
+      "note": "No floor price mentioned in the three source sentences for this note."
+    },
+    "hasResetProvisions": {
+      "value": false,
+      "status": "verified",
+      "note": "No reset provision language in the source sentences for this note."
+    },
+    "discountRate": {
+      "value": 0.35,
+      "status": "needs_domain_review",
+      "note": "DOMAIN REVIEW REQUIRED. Source text: '65% of the lowest trading price'. This means the holder pays 65% of market price, implying a 35% discount (1 - 0.65 = 0.35). The stored parser output is 0.65. The ConvertibleNote type documents discountRate as '0–1 fraction (e.g. 0.20 = 20% discount)', which would imply 0.35 is correct. However the parser may be storing the conversion factor (0.65) rather than the discount (0.35). Founder must confirm the intended field semantics and verify which is correct."
+    },
+    "instrumentType": {
+      "value": "convertible_note",
+      "status": "verified",
+      "note": "Source text: 'convertible, redeemable note'. Confirmed from _sourceSentenceTexts[0]."
+    }
+  }
+}

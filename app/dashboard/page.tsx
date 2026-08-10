@@ -1,10 +1,20 @@
 import Link from 'next/link';
 import Nav from '@/components/Nav';
 import Footer from '@/components/Footer';
+import { getDashboardStats } from '@/lib/server-data';
 
 export const metadata = { title: 'Dashboard — OTCIntel' };
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const stats = await getDashboardStats();
+
+  const lastUpdatedDisplay = stats.lastUpdated
+    ? new Date(stats.lastUpdated).toLocaleString('en-US', {
+        month: 'long', day: 'numeric', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+      })
+    : 'No data yet';
+
   return (
     <>
       <Nav />
@@ -18,7 +28,7 @@ export default function DashboardPage() {
             <p className="page-subtitle">Overview of tracked OTC companies and recent intelligence signals.</p>
           </div>
           <div className="page-date">
-            Last updated<br />April 22, 2026 &nbsp;·&nbsp; 16:42 EST
+            Last updated<br />{lastUpdatedDisplay}
           </div>
         </div>
 
@@ -31,23 +41,23 @@ export default function DashboardPage() {
         <div className="snapshot-grid">
           <div className="snapshot-cell all">
             <div className="snap-label">Tracked companies</div>
-            <div className="snap-val green">8</div>
+            <div className="snap-val green">{stats.companiesTracked}</div>
             <div className="snap-sub">OTC and microcap</div>
           </div>
           <div className="snapshot-cell risk">
-            <div className="snap-label">Active dilution risk</div>
-            <div className="snap-val red">3</div>
-            <div className="snap-sub">Risk score above 75</div>
+            <div className="snap-label">Filings ingested</div>
+            <div className="snap-val amber">{stats.totalFilingsParsed}</div>
+            <div className="snap-sub">From SEC EDGAR</div>
           </div>
           <div className="snapshot-cell filings">
-            <div className="snap-label">Recent filings</div>
-            <div className="snap-val amber">6</div>
-            <div className="snap-sub">Filed in past 7 days</div>
+            <div className="snap-label">With intelligence</div>
+            <div className="snap-val green">{stats.companiesWithIntelligence}</div>
+            <div className="snap-sub">Usable confidence or above</div>
           </div>
           <div className="snapshot-cell flags">
-            <div className="snap-label">High risk flags</div>
-            <div className="snap-val red">2</div>
-            <div className="snap-sub">New financing detected</div>
+            <div className="snap-label">Insufficient data</div>
+            <div className="snap-val" style={{ color: 'var(--text-muted)' }}>{stats.companiesInsufficient}</div>
+            <div className="snap-sub">Needs more filings</div>
           </div>
         </div>
 
@@ -62,156 +72,138 @@ export default function DashboardPage() {
             <span className="card-title">Filing activity</span>
             <Link href="/companies" className="card-action">View all companies →</Link>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '80px' }}>Ticker</th>
-                <th>Company</th>
-                <th style={{ width: '90px' }}>Type</th>
-                <th style={{ width: '90px' }}>Date</th>
-                <th style={{ width: '200px' }}>Signal</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="clickable">
-                <td className="td-ticker"><Link href="/company/ABCD">ABCD</Link></td>
-                <td><div className="td-company">Alpha Bio Corp.</div><div className="td-company-sub">OTC · Pink Sheets</div></td>
-                <td><span className="filing-type-badge">8-K</span></td>
-                <td className="td-date">Apr 3, 2026</td>
-                <td><span className="signal high">Convertible note filed</span></td>
-              </tr>
-              <tr className="clickable">
-                <td className="td-ticker"><Link href="/company/WXYZ">WXYZ</Link></td>
-                <td><div className="td-company">Westyx Industries Inc.</div><div className="td-company-sub">OTC · Pink Sheets</div></td>
-                <td><span className="filing-type-badge">S-1</span></td>
-                <td className="td-date">Apr 2, 2026</td>
-                <td><span className="signal high">Share registration filed</span></td>
-              </tr>
-              <tr className="clickable">
-                <td className="td-ticker"><Link href="/company/EFGH">EFGH</Link></td>
-                <td><div className="td-company">EFG Holdings Group</div><div className="td-company-sub">OTC · Pink Sheets</div></td>
-                <td><span className="filing-type-badge">10-Q</span></td>
-                <td className="td-date">Apr 1, 2026</td>
-                <td><span className="signal neutral">Quarterly results</span></td>
-              </tr>
-              <tr className="clickable">
-                <td className="td-ticker"><Link href="/company/MNOP">MNOP</Link></td>
-                <td><div className="td-company">Monarch Pharma Inc.</div><div className="td-company-sub">OTC · Pink Sheets</div></td>
-                <td><span className="filing-type-badge">8-K</span></td>
-                <td className="td-date">Mar 31, 2026</td>
-                <td><span className="signal med">Equity line draw notice</span></td>
-              </tr>
-              <tr className="clickable">
-                <td className="td-ticker"><Link href="/company/QRST">QRST</Link></td>
-                <td><div className="td-company">Quantum Resource Tech.</div><div className="td-company-sub">OTC · Expert Market</div></td>
-                <td><span className="filing-type-badge">NT 10-Q</span></td>
-                <td className="td-date">Mar 29, 2026</td>
-                <td><span className="signal med">Filing delay disclosed</span></td>
-              </tr>
-              <tr className="clickable">
-                <td className="td-ticker"><Link href="/company/UVWX">UVWX</Link></td>
-                <td><div className="td-company">United Ventures Exchange</div><div className="td-company-sub">OTC · Pink Sheets</div></td>
-                <td><span className="filing-type-badge">10-K</span></td>
-                <td className="td-date">Mar 28, 2026</td>
-                <td><span className="signal low">Annual report filed</span></td>
-              </tr>
-            </tbody>
-          </table>
+          {stats.recentFilings.length > 0 ? (
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: '80px' }}>Ticker</th>
+                  <th>Company</th>
+                  <th style={{ width: '90px' }}>Type</th>
+                  <th style={{ width: '110px' }}>Date</th>
+                  <th style={{ width: '220px' }}>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.recentFilings.map(f => (
+                  <tr key={f.accessionNumber} className="clickable">
+                    <td className="td-ticker">
+                      <Link href={`/company/${f.ticker}`}>{f.ticker}</Link>
+                    </td>
+                    <td>
+                      <div className="td-company">{f.companyName}</div>
+                      <div className="td-company-sub">{f.accessionNumber}</div>
+                    </td>
+                    <td><span className="filing-type-badge">{f.formType}</span></td>
+                    <td className="td-date">
+                      {new Date(f.filedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </td>
+                    <td>
+                      <a
+                        href={f.documentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="card-action"
+                        style={{ fontSize: '0.72rem' }}
+                      >
+                        SEC EDGAR →
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ padding: '2rem', textAlign: 'center', fontFamily: 'var(--mono)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              No filings ingested yet. Run the ingestion pipeline to populate this dashboard.
+            </div>
+          )}
           <div className="table-footer">
-            <span className="table-footer-note">Sourced from SEC EDGAR public filings &nbsp;·&nbsp; Delayed data</span>
-            <span className="table-footer-note">Showing 6 of 6 recent filings</span>
+            <span className="table-footer-note">Sourced from SEC EDGAR public filings · Real ingested data</span>
+            <span className="table-footer-note">Showing {stats.recentFilings.length} most recent</span>
           </div>
         </div>
 
         {/* LOWER GRID */}
         <div className="lower-grid">
 
-          {/* HIGH DILUTION RISK */}
+          {/* NEEDS REVIEW */}
           <div>
             <div className="section-divider">
-              <span className="section-divider-label">High dilution risk</span>
+              <span className="section-divider-label">Needs review</span>
               <div className="section-divider-line" />
             </div>
             <div className="card">
               <div className="card-head">
-                <span className="card-title">Risk flags</span>
+                <span className="card-title">Review queue</span>
                 <Link href="/companies" className="card-action">View all →</Link>
               </div>
-              <div className="risk-list">
-                <div className="risk-item">
-                  <div className="risk-item-left">
-                    <div className="risk-ticker">ABCD</div>
-                    <div className="risk-desc">High dilution exposure from active convertible note. Estimated conversion shares exceed 30% of current float.</div>
+              <div style={{ padding: '0.25rem 0' }}>
+                {stats.companiesNeedingReview > 0 ? (
+                  <div style={{ padding: '1rem', fontSize: '0.82rem', color: 'var(--text-dim)', lineHeight: '1.6' }}>
+                    <span style={{ color: 'var(--amber)', fontFamily: 'var(--mono)', fontSize: '1.2rem', fontWeight: 700 }}>
+                      {stats.companiesNeedingReview}
+                    </span>
+                    {' '}
+                    {stats.companiesNeedingReview === 1 ? 'company' : 'companies'} flagged for review.
+                    Visit the{' '}
+                    <Link href="/companies" style={{ color: 'var(--accent)', textDecoration: 'none' }}>
+                      companies page
+                    </Link>
+                    {' '}and filter by &ldquo;Needs review&rdquo; to see which tickers require attention.
                   </div>
-                  <span className="risk-score-badge high">Score 83</span>
-                </div>
-                <div className="risk-item">
-                  <div className="risk-item-left">
-                    <div className="risk-ticker">WXYZ</div>
-                    <div className="risk-desc">Active $1.5M convertible note at 22% discount. No floor price. S-1 registration filed for resale shares.</div>
+                ) : (
+                  <div style={{ padding: '1.5rem', textAlign: 'center' }}>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: '0.7rem', color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                      No items pending
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                      All ingested companies have a resolved confidence status.
+                    </div>
                   </div>
-                  <span className="risk-score-badge high">Score 87</span>
-                </div>
-                <div className="risk-item">
-                  <div className="risk-item-left">
-                    <div className="risk-ticker" style={{ color: 'var(--amber)' }}>QRIX</div>
-                    <div className="risk-desc">Convertible financing announced via 8-K. Discount rate and lookback window under review.</div>
-                  </div>
-                  <span className="risk-score-badge med">Score 61</span>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* RECENTLY ADDED */}
+          {/* DATA COVERAGE */}
           <div>
             <div className="section-divider">
-              <span className="section-divider-label">Recently added</span>
+              <span className="section-divider-label">Coverage summary</span>
               <div className="section-divider-line" />
             </div>
             <div className="card">
               <div className="card-head">
-                <span className="card-title">New companies</span>
+                <span className="card-title">Ingestion status</span>
                 <Link href="/companies" className="card-action">View all →</Link>
               </div>
-              <table className="recent-table">
-                <tbody>
-                  <tr>
-                    <td><span className="recent-ticker">ABCD</span></td>
-                    <td><span className="recent-name">Alpha Bio Corp.</span></td>
-                    <td className="recent-added">Apr 3</td>
-                  </tr>
-                  <tr>
-                    <td><span className="recent-ticker">WXYZ</span></td>
-                    <td><span className="recent-name">Westyx Industries Inc.</span></td>
-                    <td className="recent-added">Apr 1</td>
-                  </tr>
-                  <tr>
-                    <td><span className="recent-ticker">QRIX</span></td>
-                    <td><span className="recent-name">Qurix Holdings Inc.</span></td>
-                    <td className="recent-added">Mar 30</td>
-                  </tr>
-                  <tr>
-                    <td><span className="recent-ticker">EFGH</span></td>
-                    <td><span className="recent-name">EFG Holdings Group</span></td>
-                    <td className="recent-added">Mar 28</td>
-                  </tr>
-                  <tr>
-                    <td><span className="recent-ticker">MNOP</span></td>
-                    <td><span className="recent-name">Monarch Pharma Inc.</span></td>
-                    <td className="recent-added">Mar 25</td>
-                  </tr>
-                </tbody>
-              </table>
-              <div className="table-footer">
-                <span className="table-footer-note">Showing 5 most recently added</span>
+              <div className="card-body" style={{ padding: '1rem' }}>
+                <div className="data-row">
+                  <span className="data-label">Total companies</span>
+                  <span className="data-val">{stats.companiesTracked}</span>
+                </div>
+                <div className="data-row">
+                  <span className="data-label">With intelligence</span>
+                  <span className="data-val positive">{stats.companiesWithIntelligence}</span>
+                </div>
+                <div className="data-row">
+                  <span className="data-label">Needing review</span>
+                  <span className={`data-val ${stats.companiesNeedingReview > 0 ? 'warning' : ''}`}>{stats.companiesNeedingReview}</span>
+                </div>
+                <div className="data-row" style={{ borderBottom: 'none' }}>
+                  <span className="data-label">Insufficient data</span>
+                  <span className="data-val" style={{ color: 'var(--text-muted)' }}>{stats.companiesInsufficient}</span>
+                </div>
+                <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid var(--rule)', fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.55' }}>
+                  All data sourced from SEC EDGAR via the OTCIntel ingestion pipeline.
+                  Market price and volume data are not currently ingested.
+                </div>
               </div>
             </div>
           </div>
 
         </div>
 
-        <Footer disclaimer="All data sourced from publicly available SEC filings and OTC Markets disclosures. Risk scores and signals are analytical outputs provided for informational purposes only. Nothing on this page constitutes investment advice." />
+        <Footer disclaimer="All data sourced from publicly available SEC EDGAR filings. Risk scores and signals are analytical outputs provided for informational purposes only. Nothing on this page constitutes investment advice." />
       </div>
     </>
   );

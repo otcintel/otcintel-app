@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# persistent data store (survives restarts — do not commit)
+/data/*.json
+/data/filings/
+/data/runs/
+/data/intelligence/
+/data/*.bak
+/data/**/*.bak

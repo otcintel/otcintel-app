@@ -1,0 +1,61 @@
+{
+  "$schema": "1.0.0",
+  "id": "WXYZ-8K-0001876543-26-000001",
+  "description": "WXYZ 8-K: $1.5M convertible note, 22% discount, 10-day lookback, reset provisions, 12M warrants @ $0.10",
+  "ticker": "WXYZ",
+  "cik": "0001876543",
+  "formType": "8-K",
+  "filedAt": "2026-03-18",
+  "accessionNumber": "0001876543-26-000001",
+  "fixtureSource": "mock_rawFilings",
+  "fixtureKey": "WXYZ",
+  "fixtureIndex": 0,
+  "evaluationTarget": "ExtractedFinancingTerms",
+  "expected": {
+    "financingType": {
+      "value": "convertible_note",
+      "status": "verified",
+      "note": "Text: 'Convertible Promissory Note' via Securities Purchase Agreement"
+    },
+    "principalAmount": {
+      "value": 1500000,
+      "status": "verified",
+      "note": "Text: 'in the aggregate principal amount of $1,500,000'"
+    },
+    "discountRate": {
+      "value": 0.22,
+      "status": "verified",
+      "note": "Text: '78% of the lowest VWAP'. Discount = 1 - 0.78 = 0.22"
+    },
+    "lookbackDays": {
+      "value": 10,
+      "status": "verified",
+      "note": "Text: '10 trading days immediately preceding the conversion date'"
+    },
+    "hasFloorPrice": {
+      "value": false,
+      "status": "verified",
+      "note": "Text: 'Note does not contain a floor conversion price'"
+    },
+    "hasResetProvisions": {
+      "value": true,
+      "status": "verified",
+      "note": "Text: 'anti-dilution provisions, including reset provisions that adjust the conversion price downward'"
+    },
+    "warrantShares": {
+      "value": 12000000,
+      "status": "verified",
+      "note": "Text: 'warrants to purchase 12,000,000 shares of the Company's common stock'"
+    },
+    "warrantExercisePrice": {
+      "value": 0.10,
+      "status": "verified",
+      "note": "Text: 'at an exercise price of $0.10 per share'"
+    },
+    "investorName": {
+      "value": "Northfield Capital Group LLC",
+      "status": "needs_domain_review",
+      "note": "Text contains investor name. Extraction depends on investor name parser patterns."
+    }
+  }
+}

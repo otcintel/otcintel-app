@@ -1,0 +1,31 @@
+{
+  "$schema": "1.0.0",
+  "id": "WXYZ-10Q-0001876543-25-000088",
+  "description": "WXYZ 10-Q: Share structure — 1B authorized, 108M outstanding, 8M preferred (Series A)",
+  "ticker": "WXYZ",
+  "cik": "0001876543",
+  "formType": "10-Q",
+  "filedAt": "2025-11-14",
+  "accessionNumber": "0001876543-25-000088",
+  "fixtureSource": "mock_rawFilings",
+  "fixtureKey": "WXYZ",
+  "fixtureIndex": 1,
+  "evaluationTarget": "ExtractedShareStructure",
+  "expected": {
+    "sharesAuthorized": {
+      "value": 1000000000,
+      "status": "verified",
+      "note": "Text: 'authorized to issue 1,000,000,000 shares of common stock'"
+    },
+    "sharesOutstanding": {
+      "value": 108000000,
+      "status": "verified",
+      "note": "Text: '108,000,000 shares of our common stock issued and outstanding'"
+    },
+    "preferredSharesOutstanding": {
+      "value": 8000000,
+      "status": "verified",
+      "note": "Text: '8,000,000 shares of Series A preferred stock issued and outstanding'"
+    }
+  }
+}
