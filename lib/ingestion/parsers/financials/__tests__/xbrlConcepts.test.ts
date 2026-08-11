@@ -15,6 +15,10 @@ import {
   DEBT_CONCEPTS,
 } from '../xbrlConcepts';
 import type { CompanyFacts, XbrlConceptValue } from '../../../fetchers/edgar/companyFacts';
+import { buildFinancialSnapshot } from '../snapshot';
+import { scoreRunwayUrgency } from '../runwayUrgency';
+import { applyRunwayUplift } from '../../../runwayIntegration';
+import type { RiskScoreRecord, RiskFactor } from '../../../../types';
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
@@ -127,7 +131,7 @@ describe('extractXbrlConcepts — cash concept priority', () => {
     expect(extractXbrlConcepts(facts).cashAndEquivalents).toBe(2_000_000);
   });
 
-  it('falls back to CashCashEquivalentsAndShortTermInvestments as third priority', () => {
+  it('falls back to CashCashEquivalentsAndShortTermInvestments as fourth priority', () => {
     const facts = makeFacts({
       CashCashEquivalentsAndShortTermInvestments: { instant: [Q1_VALUE(3_000_000)] },
     });
@@ -540,6 +544,7 @@ describe('extractXbrlConcepts — period selection', () => {
 
 // ─── 12. Full snapshot: all fields populated ──────────────────────────────────
 
+
 describe('extractXbrlConcepts — complete snapshot', () => {
   it('extracts a complete Q3 snapshot with all fields', () => {
     const period = { fp: 'Q3', fy: 2026, end: '2026-09-30' };
@@ -570,5 +575,118 @@ describe('extractXbrlConcepts — complete snapshot', () => {
     expect(result.totalDebt).toBe(2_000_000);
     expect(result.totalDebtComponents).toContain('LongTermDebt');
     expect(result.totalDebtComponents).toContain('ConvertibleNotesPayable');
+  });
+});
+
+// ─── 13. CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents fallback ─
+
+describe('extractXbrlConcepts — restricted-cash fallback (CASH_CONCEPTS[2])', () => {
+  it('scenario 1: uses restricted-cash concept when narrow cash concepts are absent for the period', () => {
+    const facts = makeFacts({
+      CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents: { instant: [Q1_VALUE(3_102_817)] },
+      LiabilitiesCurrent: { instant: [Q1_VALUE(13_567_421)] },
+    });
+    const result = extractXbrlConcepts(facts);
+    expect(result.cashAndEquivalents).toBe(3_102_817);
+    expect(result.xbrlAvailable).toBe(true);
+  });
+
+  it('scenario 2: CashAndCashEquivalentsAtCarryingValue wins over restricted-cash concept when both present', () => {
+    const facts = makeFacts({
+      CashAndCashEquivalentsAtCarryingValue:                        { instant: [Q1_VALUE(1_000_000)] },
+      CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents: { instant: [Q1_VALUE(1_250_000)] },
+    });
+    expect(extractXbrlConcepts(facts).cashAndEquivalents).toBe(1_000_000);
+  });
+
+  it('scenario 3: Cash wins over restricted-cash concept when present', () => {
+    const facts = makeFacts({
+      Cash:                                                          { instant: [Q1_VALUE(800_000)] },
+      CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents: { instant: [Q1_VALUE(1_000_000)] },
+    });
+    expect(extractXbrlConcepts(facts).cashAndEquivalents).toBe(800_000);
+  });
+});
+
+// ─── 14. VNRX Q1 2026: restricted cash → snapshot → runway → uplift ─────────
+
+describe('VNRX Q1 2026 integration: restricted-cash concept → critical runway → +15 uplift', () => {
+  // VNRX dropped CashAndCashEquivalentsAtCarryingValue in Q1 2026, switching to
+  // the ASU 2016-18 combined concept. Reproduce that structure exactly.
+  const FY2025_CASH = makeValue({ fp: 'FY', fy: 2025, end: '2025-12-31', val: 1_117_028, form: '10-K', filed: '2026-03-31' });
+  const VNRX_FACTS = makeFacts({
+    CashAndCashEquivalentsAtCarryingValue:                        { instant: [FY2025_CASH] },
+    CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents: { instant: [Q1_VALUE(3_102_817)] },
+    LiabilitiesCurrent:                         { instant:  [Q1_VALUE(13_567_421)] },
+    RetainedEarningsAccumulatedDeficit:          { instant:  [Q1_VALUE(-259_566_144)] },
+    NetCashProvidedByUsedInOperatingActivities:  { duration: [Q1_DURATION(-5_280_132)] },
+  });
+
+  it('scenario 4: extracts cash from restricted-cash concept when narrow concept absent for Q1 2026', () => {
+    const result = extractXbrlConcepts(VNRX_FACTS);
+    expect(result.cashAndEquivalents).toBe(3_102_817);
+    expect(result.operatingCashFlow).toBe(-5_280_132);
+    expect(result.operatingCashFlowMonths).toBe(3);
+    expect(result.fiscalPeriod).toBe('Q1');
+    expect(result.fiscalYear).toBe(2026);
+    expect(result.periodEndDate).toBe('2026-03-31');
+  });
+
+  it('scenario 5: FinancialSnapshot computes correct monthly burn and runway', () => {
+    const xbrl = extractXbrlConcepts(VNRX_FACTS);
+    const snapshot = buildFinancialSnapshot({
+      ticker: 'VNRX', cik: '0000093314', formType: '10-Q', xbrl,
+      extractedAt: '2026-08-11T00:00:00.000Z',
+    });
+    expect(snapshot.cashAndEquivalents).toBe(3_102_817);
+    expect(snapshot.operatingCashFlow).toBe(-5_280_132);
+    expect(snapshot.monthlyBurnRate).toBe(1_760_044);
+    expect(snapshot.cashRunwayMonths).toBeCloseTo(1.76, 1);
+  });
+
+  it('scenario 6: scoreRunwayUrgency classifies the snapshot as critical', () => {
+    const xbrl = extractXbrlConcepts(VNRX_FACTS);
+    const snapshot = buildFinancialSnapshot({
+      ticker: 'VNRX', cik: '0000093314', formType: '10-Q', xbrl,
+      extractedAt: '2026-08-11T00:00:00.000Z',
+    });
+    const urgency = scoreRunwayUrgency(snapshot);
+    expect(urgency.runwayStatus).toBe('critical');
+  });
+
+  it('scenario 7: applyRunwayUplift raises a base score of 37 to 52', () => {
+    const xbrl = extractXbrlConcepts(VNRX_FACTS);
+    const snapshot = buildFinancialSnapshot({
+      ticker: 'VNRX', cik: '0000093314', formType: '10-Q', xbrl,
+      extractedAt: '2026-08-11T00:00:00.000Z',
+    });
+    const baseFactors: RiskFactor[] = [
+      { name: 'Discount depth',   fillWidth: 10, fillColor: 'var(--green)', label: 'Low',  labelColor: 'var(--green)' },
+      { name: 'Lookback window',  fillWidth: 40, fillColor: 'var(--amber)', label: 'Med',  labelColor: 'var(--amber)' },
+      { name: 'Warrant coverage', fillWidth: 0,  fillColor: 'var(--green)', label: 'Low',  labelColor: 'var(--green)' },
+      { name: 'Reset provisions', fillWidth: 18, fillColor: 'var(--green)', label: 'Low',  labelColor: 'var(--green)' },
+      { name: 'Floor price',      fillWidth: 50, fillColor: 'var(--amber)', label: 'Med',  labelColor: 'var(--amber)' },
+    ];
+    const base: RiskScoreRecord = {
+      ticker: 'VNRX',
+      score:  37,
+      level:  'low',
+      color:  'green',
+      barWidth: 37,
+      bannerVariant:     'green-risk',
+      bannerDotColor:    'var(--green)',
+      bannerPillVariant: 'green',
+      bannerMessage:     '<strong>Low financing risk detected.</strong>',
+      factors:       baseFactors,
+      drivers:       [],
+      scoreBasis:    'valid',
+      knownFactors:  ['discountRate'],
+      unknownFactors: [],
+      dataWarnings:  [],
+    };
+    const enhanced = applyRunwayUplift(base, snapshot);
+    expect(enhanced.score).toBe(52);
+    expect(enhanced.level).toBe('med');
+    expect(enhanced.color).toBe('amber');
   });
 });

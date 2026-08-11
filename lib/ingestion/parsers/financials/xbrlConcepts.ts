@@ -22,6 +22,7 @@ import type { CompanyFacts, XbrlConceptValue, XbrlConceptData } from '../../fetc
 export const CASH_CONCEPTS = [
   'CashAndCashEquivalentsAtCarryingValue',
   'Cash',
+  'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents',  // ASU 2016-18 combined concept
   'CashCashEquivalentsAndShortTermInvestments',
 ] as const;
 
