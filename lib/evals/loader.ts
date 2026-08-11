@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { GoldenCase } from './types';
 import { mockRawFilings } from '../mock/rawFilings';
+import type { CompanyFacts } from '../ingestion/fetchers/edgar/companyFacts';
 
 const EVALS_DIR = path.resolve(process.cwd(), 'evals');
 const GOLDEN_DIR = path.join(EVALS_DIR, 'golden');
@@ -76,6 +77,18 @@ export function loadFileSnapshotFixture(fixtureKey: string): string {
     throw new Error(`Fixture file not found: ${fixturePath}`);
   }
   return fs.readFileSync(fixturePath, 'utf-8');
+}
+
+/**
+ * Load an XBRL CompanyFacts snapshot from evals/fixtures/.
+ * Throws if the fixture file does not exist or is not valid JSON.
+ */
+export function loadXbrlSnapshotFixture(fixtureKey: string): CompanyFacts {
+  const fixturePath = path.join(FIXTURES_DIR, fixtureKey);
+  if (!fs.existsSync(fixturePath)) {
+    throw new Error(`XBRL fixture not found: ${fixturePath}`);
+  }
+  return JSON.parse(fs.readFileSync(fixturePath, 'utf-8')) as CompanyFacts;
 }
 
 /**

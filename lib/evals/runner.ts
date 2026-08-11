@@ -14,12 +14,15 @@ import { compareFields, casePassedFromResults } from './comparator';
 import {
   resolveMockFixtureText,
   loadFileSnapshotFixture,
+  loadXbrlSnapshotFixture,
   loadStoredOutputSnapshot,
   findStoredFiling,
 } from './loader';
 import { parseFinancingTerms } from '../ingestion/parsers/financing';
 import { parseShareStructure } from '../ingestion/parsers/shareStructure';
 import { parseFinancingReport } from '../ingestion/parsers/financingReport';
+import { extractXbrlConcepts } from '../ingestion/parsers/financials/xbrlConcepts';
+import { detectGoingConcern } from '../ingestion/parsers/financials/goingConcern';
 
 // ─── Target extraction ────────────────────────────────────────────────────────
 
@@ -61,6 +64,11 @@ function extractTarget(
         if (result) return 'Expected no financing but parser detected financing terms';
         // No extraction needed — pass an empty object; comparator will check "expected" has no entries
         return {};
+      }
+
+      case 'GoingConcernResult': {
+        const result = detectGoingConcern(text);
+        return result as unknown as Record<string, unknown>;
       }
 
       default:
@@ -132,6 +140,17 @@ export function runEvalCase(goldenCase: GoldenCase): CaseResult {
         return errorResult(goldenCase, `Stored filing with accession ${goldenCase.accessionNumber} not found in data/filings/${goldenCase.ticker}.json`);
       }
       extractedTarget = extractTargetFromSnapshot(goldenCase, storedFiling);
+    } else if (goldenCase.fixtureSource === 'xbrl_snapshot') {
+      const fixtureKey = goldenCase.fixtureKey;
+      if (!fixtureKey) {
+        return errorResult(goldenCase, 'fixtureKey is required for xbrl_snapshot source');
+      }
+      if (goldenCase.evaluationTarget !== 'FinancialSnapshot') {
+        return errorResult(goldenCase, `xbrl_snapshot source only supports FinancialSnapshot target, got: ${goldenCase.evaluationTarget}`);
+      }
+      const facts = loadXbrlSnapshotFixture(fixtureKey);
+      const xbrlResult = extractXbrlConcepts(facts, goldenCase.periodOverride);
+      extractedTarget = xbrlResult as unknown as Record<string, unknown>;
     } else {
       // Re-run parser on raw text
       let text: string;

@@ -1,0 +1,278 @@
+{
+  "cik": "0001498148",
+  "entityName": "Artificial Intelligence Technology Solutions Inc.",
+  "facts": {
+    "us-gaap": {
+      "Cash": {
+        "label": "Cash",
+        "description": "Amount of currency on hand as well as demand deposits with banks or financial institutions.",
+        "units": {
+          "USD": [
+            {
+              "end": "2026-05-31",
+              "val": 94643,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-05-31",
+              "val": 94643,
+              "accn": "0001493152-26-033164",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q",
+              "filed": "2026-07-14"
+            },
+            {
+              "end": "2026-02-28",
+              "val": 109043,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-02-28",
+              "val": 109043,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-02-28",
+              "val": 109043,
+              "accn": "0001493152-26-027796",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K",
+              "filed": "2026-06-09"
+            },
+            {
+              "end": "2025-02-28",
+              "val": 865975,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            }
+          ]
+        }
+      },
+      "LiabilitiesCurrent": {
+        "label": "Liabilities, Current",
+        "description": "Total obligations incurred as part of normal operations that are expected to be paid during the following twelve months.",
+        "units": {
+          "USD": [
+            {
+              "end": "2026-05-31",
+              "val": 44890383,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-05-31",
+              "val": 44890383,
+              "accn": "0001493152-26-033164",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q",
+              "filed": "2026-07-14"
+            },
+            {
+              "end": "2026-02-28",
+              "val": 19952748,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-02-28",
+              "val": 19952748,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2025-02-28",
+              "val": 7576681,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            }
+          ]
+        }
+      },
+      "RetainedEarningsAccumulatedDeficit": {
+        "label": "Retained Earnings (Accumulated Deficit)",
+        "description": "The cumulative amount of the reporting entity's undistributed earnings or deficit.",
+        "units": {
+          "USD": [
+            {
+              "end": "2026-05-31",
+              "val": -176931052,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-05-31",
+              "val": -176931052,
+              "accn": "0001493152-26-033164",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q",
+              "filed": "2026-07-14"
+            },
+            {
+              "end": "2026-02-28",
+              "val": -171121742,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-02-28",
+              "val": -171121742,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2025-02-28",
+              "val": -156496930,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            }
+          ]
+        }
+      },
+      "NetCashProvidedByUsedInOperatingActivities": {
+        "label": "Net Cash Provided by (Used in) Operating Activities",
+        "description": "Amount of cash inflow (outflow) from operating activities.",
+        "units": {
+          "USD": [
+            {
+              "start": "2026-03-01",
+              "end": "2026-05-31",
+              "val": -2759307,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "start": "2026-03-01",
+              "end": "2026-05-31",
+              "val": -2759307,
+              "accn": "0001493152-26-033164",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q",
+              "filed": "2026-07-14"
+            },
+            {
+              "start": "2025-03-01",
+              "end": "2025-05-31",
+              "val": -3321185,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "start": "2025-03-01",
+              "end": "2026-02-28",
+              "val": -9344534,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "start": "2024-03-01",
+              "end": "2025-02-28",
+              "val": -12196388,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            }
+          ]
+        }
+      },
+      "NotesPayableCurrent": {
+        "label": "Notes Payable, Current",
+        "description": "Sum of the carrying values as of the balance sheet date of the portions of long-term notes payable due within one year.",
+        "units": {
+          "USD": [
+            {
+              "end": "2026-05-31",
+              "val": 26897629,
+              "accn": "0001493152-26-033603",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-05-31",
+              "val": 26897629,
+              "accn": "0001493152-26-033164",
+              "fy": 2026,
+              "fp": "Q1",
+              "form": "10-Q",
+              "filed": "2026-07-14"
+            },
+            {
+              "end": "2026-02-28",
+              "val": 8848140,
+              "accn": "0001493152-26-033600",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K/A",
+              "filed": "2026-07-17"
+            },
+            {
+              "end": "2026-02-28",
+              "val": 8848140,
+              "accn": "0001493152-26-027796",
+              "fy": 2026,
+              "fp": "FY",
+              "form": "10-K",
+              "filed": "2026-06-09"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

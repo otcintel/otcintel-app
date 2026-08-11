@@ -1,0 +1,76 @@
+{
+  "$schema": "1.0.0",
+  "id": "AITX-10KA-xbrl-FY2026",
+  "description": "AITX 10-K/A XBRL extraction: FY2026 annual period (Feb 28, 2026). Uses periodOverride to pin fp=FY despite the more recent Q1 period also present in the fixture. Tests annual normalization and 10-K/A amendment handling.",
+  "ticker": "AITX",
+  "cik": "0001498148",
+  "formType": "10-K/A",
+  "filedAt": "2026-07-17",
+  "accessionNumber": "0001493152-26-033600",
+  "fixtureSource": "xbrl_snapshot",
+  "fixtureKey": "AITX-xbrl-0001498148.json",
+  "evaluationTarget": "FinancialSnapshot",
+  "periodOverride": { "fp": "FY", "fy": 2026, "end": "2026-02-28" },
+  "expected": {
+    "fiscalPeriod": {
+      "value": "FY",
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: fp=FY for annual period ended 2026-02-28 in 10-K/A accn 0001493152-26-033600. periodOverride pins extraction to this annual period."
+    },
+    "fiscalYear": {
+      "value": 2026,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: fy=2026 for fiscal year ended February 28, 2026."
+    },
+    "periodEndDate": {
+      "value": "2026-02-28",
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: end=2026-02-28 — annual balance sheet date for AITX (fiscal year ends February 28)."
+    },
+    "filedAt": {
+      "value": "2026-07-17",
+      "status": "verified",
+      "note": "SEC EDGAR: 10-K/A filed=2026-07-17. Amendment supersedes original 10-K filed 2026-06-09 (accn 0001493152-26-027796)."
+    },
+    "accessionNumber": {
+      "value": "0001493152-26-033600",
+      "status": "verified",
+      "note": "SEC EDGAR: accn of the winning 10-K/A (filed 2026-07-17, supersedes 10-K filed 2026-06-09). Confirms amendment deduplication for annual period."
+    },
+    "cashAndEquivalents": {
+      "value": 109043,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: Cash val=109043 at end=2026-02-28, fp=FY, fy=2026 (10-K/A). Confirmed against 10-K/A filing disclosures: accumulated deficit $171,121,742 and negative working capital $17,017,745 as of Feb 28, 2026."
+    },
+    "currentLiabilities": {
+      "value": 19952748,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: LiabilitiesCurrent val=19952748 at end=2026-02-28, fp=FY, fy=2026 (10-K/A)."
+    },
+    "accumulatedDeficit": {
+      "value": -171121742,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: RetainedEarningsAccumulatedDeficit val=-171121742 at end=2026-02-28, fp=FY, fy=2026 (10-K/A). Cross-verified: 10-K/A text states 'accumulated deficit of $171,121,742 as of February 28, 2026'."
+    },
+    "operatingCashFlow": {
+      "value": -9344534,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: NetCashProvidedByUsedInOperatingActivities val=-9344534 for duration 2025-03-01 to 2026-02-28, fp=FY, fy=2026 (10-K/A). Cross-verified: 10-K/A text states 'negative cash flow from operating activities of $9,344,534'."
+    },
+    "operatingCashFlowMonths": {
+      "value": 12,
+      "status": "verified",
+      "note": "fp=FY maps to 12 months. FP_MONTHS['FY']=12 in xbrlConcepts.ts."
+    },
+    "totalDebt": {
+      "value": 8848140,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: NotesPayableCurrent val=8848140 at end=2026-02-28, fp=FY, fy=2026 (10-K/A). LongTermDebt, ConvertibleNotesPayable, ConvertibleDebtCurrent absent for this period in EDGAR XBRL."
+    },
+    "xbrlAvailable": {
+      "value": true,
+      "status": "verified",
+      "note": "us-gaap facts present in XBRL document for AITX CIK 0001498148."
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "1.0.0",
+  "id": "AITX-10KA-gc-0001493152-26-033600",
+  "description": "AITX 10-K/A going-concern detection: Note 1 text from annual report for fiscal year ended February 28, 2026. Expects high-confidence detection of 'raise substantial doubt' language.",
+  "ticker": "AITX",
+  "cik": "0001498148",
+  "formType": "10-K/A",
+  "filedAt": "2026-07-17",
+  "accessionNumber": "0001493152-26-033600",
+  "fixtureSource": "file_snapshot",
+  "fixtureKey": "AITX-gc-0001493152-26-033600.txt",
+  "evaluationTarget": "GoingConcernResult",
+  "expected": {
+    "goingConcernFlag": {
+      "value": true,
+      "status": "verified",
+      "note": "AITX 10-K/A (accn 0001493152-26-033600) Note 1 explicitly discloses going-concern doubt. Cross-verified: 10-K/A text states 'These factors raise substantial doubt about the Company's ability to continue as a going concern'."
+    },
+    "confidence": {
+      "value": "high",
+      "status": "verified",
+      "note": "Tier 1 pattern match: 'raise substantial doubt about [the Company's] ability to continue as a going concern' — matches TIERS[0].patterns[0] in goingConcern.ts."
+    },
+    "sourceType": {
+      "value": "filing_text",
+      "status": "verified",
+      "note": "GoingConcernResult.sourceType is always 'filing_text' — the constant defined in goingConcern.ts."
+    },
+    "matchedSentence": {
+      "value": "These factors raise substantial doubt about the Company's ability to continue as a going concern for the twelve months following the issuance of these financial statements.",
+      "status": "verified",
+      "note": "Sentence from AITX 10-K/A Note 1 (accn 0001493152-26-033600). The fixture contains this sentence verbatim. detectGoingConcern selects it via Tier 1 pattern 1 after the preceding 'prepared assuming' sentence (Tier 2) fails to trigger Tier 1."
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "1.0.0",
+  "id": "AITX-10QA-xbrl-Q1FY2026",
+  "description": "AITX 10-Q/A XBRL extraction: Q1 FY2026 period (May 31, 2026). Amendment 0001493152-26-033603 supersedes 0001493152-26-033164. Tests period auto-selection and amendment deduplication.",
+  "ticker": "AITX",
+  "cik": "0001498148",
+  "formType": "10-Q/A",
+  "filedAt": "2026-07-17",
+  "accessionNumber": "0001493152-26-033603",
+  "fixtureSource": "xbrl_snapshot",
+  "fixtureKey": "AITX-xbrl-0001498148.json",
+  "evaluationTarget": "FinancialSnapshot",
+  "expected": {
+    "fiscalPeriod": {
+      "value": "Q1",
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: fp=Q1 for period ended 2026-05-31 in 10-Q/A accn 0001493152-26-033603."
+    },
+    "fiscalYear": {
+      "value": 2026,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: fy=2026 for Q1 period ended 2026-05-31."
+    },
+    "periodEndDate": {
+      "value": "2026-05-31",
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: end=2026-05-31 — balance sheet date for Q1 FY2026."
+    },
+    "filedAt": {
+      "value": "2026-07-17",
+      "status": "verified",
+      "note": "SEC EDGAR: 10-Q/A filed=2026-07-17. Amendment date; original 10-Q filed 2026-07-14."
+    },
+    "accessionNumber": {
+      "value": "0001493152-26-033603",
+      "status": "verified",
+      "note": "SEC EDGAR: accn of the winning 10-Q/A (filed later, supersedes 0001493152-26-033164). Confirms amendment deduplication picks the most recently filed entry."
+    },
+    "cashAndEquivalents": {
+      "value": 94643,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: Cash concept val=94643 at end=2026-05-31, fp=Q1, fy=2026 (10-Q/A). CashAndCashEquivalentsAtCarryingValue absent for this period; Cash is the fallback concept."
+    },
+    "currentLiabilities": {
+      "value": 44890383,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: LiabilitiesCurrent val=44890383 at end=2026-05-31, fp=Q1, fy=2026 (10-Q/A)."
+    },
+    "accumulatedDeficit": {
+      "value": -176931052,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: RetainedEarningsAccumulatedDeficit val=-176931052 at end=2026-05-31, fp=Q1, fy=2026 (10-Q/A). Negative = deficit."
+    },
+    "operatingCashFlow": {
+      "value": -2759307,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: NetCashProvidedByUsedInOperatingActivities val=-2759307 for duration 2026-03-01 to 2026-05-31, fp=Q1, fy=2026 (10-Q/A). Negative = net cash outflow."
+    },
+    "operatingCashFlowMonths": {
+      "value": 3,
+      "status": "verified",
+      "note": "fp=Q1 maps to 3 months. FP_MONTHS['Q1']=3 in xbrlConcepts.ts."
+    },
+    "totalDebt": {
+      "value": 26897629,
+      "status": "verified",
+      "note": "SEC EDGAR XBRL: NotesPayableCurrent val=26897629 at end=2026-05-31, fp=Q1, fy=2026 (10-Q/A). LongTermDebt, ConvertibleNotesPayable, ConvertibleDebtCurrent absent for this period — totalDebt reflects NotesPayableCurrent only. SEC XBRL coverage gap: other debt may appear under non-standard tags not in DEBT_CONCEPTS."
+    },
+    "xbrlAvailable": {
+      "value": true,
+      "status": "verified",
+      "note": "us-gaap facts present in XBRL document for AITX CIK 0001498148."
+    }
+  }
+}

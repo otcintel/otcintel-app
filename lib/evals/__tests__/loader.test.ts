@@ -58,8 +58,8 @@ describe('loadAllGoldenCases', () => {
       expect(c.formType).toBeTruthy();
       expect(c.filedAt).toBeTruthy();
       expect(c.accessionNumber).toBeTruthy();
-      expect(c.fixtureSource).toMatch(/^(mock_rawFilings|file_snapshot|stored_output_snapshot)$/);
-      expect(c.evaluationTarget).toMatch(/^(ExtractedFinancingTerms|ConvertibleNote|ExtractedShareStructure|no_financing)$/);
+      expect(c.fixtureSource).toMatch(/^(mock_rawFilings|file_snapshot|stored_output_snapshot|xbrl_snapshot)$/);
+      expect(c.evaluationTarget).toMatch(/^(ExtractedFinancingTerms|ConvertibleNote|ExtractedShareStructure|no_financing|FinancialSnapshot|GoingConcernResult)$/);
       expect(typeof c.expected).toBe('object');
     }
   });

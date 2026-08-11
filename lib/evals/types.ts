@@ -40,8 +40,10 @@ export interface FieldExpectation {
  * - "stored_output_snapshot" — Use the already-stored NormalizedFiling from data/filings/.
  *                             Parser is NOT re-run; output is compared against stored state.
  *                             Used when raw EDGAR text is not available locally.
+ * - "xbrl_snapshot"         — CompanyFacts JSON stored in evals/fixtures/. extractXbrlConcepts
+ *                             is re-run every eval execution. Used with FinancialSnapshot target.
  */
-export type FixtureSource = 'mock_rawFilings' | 'file_snapshot' | 'stored_output_snapshot';
+export type FixtureSource = 'mock_rawFilings' | 'file_snapshot' | 'stored_output_snapshot' | 'xbrl_snapshot';
 
 /**
  * Which parser output is being evaluated in this case.
@@ -50,12 +52,16 @@ export type FixtureSource = 'mock_rawFilings' | 'file_snapshot' | 'stored_output
  * - "ConvertibleNote"         — A single ConvertibleNote from FinancingReport.convertibleDebt[].
  * - "ExtractedShareStructure" — Output of parseShareStructure().
  * - "no_financing"            — Asserts that no financing was detected (for negative cases).
+ * - "FinancialSnapshot"       — XbrlConceptsResult from extractXbrlConcepts() (xbrl_snapshot source).
+ * - "GoingConcernResult"      — GoingConcernResult from detectGoingConcern() (file_snapshot source).
  */
 export type EvaluationTarget =
   | 'ExtractedFinancingTerms'
   | 'ConvertibleNote'
   | 'ExtractedShareStructure'
-  | 'no_financing';
+  | 'no_financing'
+  | 'FinancialSnapshot'
+  | 'GoingConcernResult';
 
 /**
  * A single golden evaluation case. Lives in evals/golden/<TICKER>/<id>.json.
@@ -103,6 +109,13 @@ export interface GoldenCase {
    * For "ConvertibleNote" target: 0-indexed position in financingReport.convertibleDebt[]
    */
   noteIndex?: number;
+
+  /**
+   * For "FinancialSnapshot" target with "xbrl_snapshot" source: override the period
+   * selection in extractXbrlConcepts. Required when testing an FY period when a more
+   * recent 10-Q period is present in the same CompanyFacts document.
+   */
+  periodOverride?: { fp: string; fy: number; end: string };
 
   // ── Expected field values ────────────────────────────────────────────────
 
@@ -236,6 +249,37 @@ export const FIELD_CATEGORIES: Record<string, string> = {
 
   // CONFIDENCE
   confidence:         'CONFIDENCE',
+
+  // XBRL PERIOD
+  fiscalPeriod:            'XBRL_PERIOD',
+  fiscalYear:              'XBRL_PERIOD',
+  periodEndDate:           'XBRL_PERIOD',
+  accessionNumber:         'XBRL_PERIOD',
+
+  // BALANCE SHEET (XBRL)
+  cashAndEquivalents:      'BALANCE_SHEET',
+  currentLiabilities:      'BALANCE_SHEET',
+  accumulatedDeficit:      'BALANCE_SHEET',
+  totalDebt:               'BALANCE_SHEET',
+  totalDebtComponents:     'BALANCE_SHEET',
+
+  // CASH FLOW (XBRL)
+  operatingCashFlow:       'CASH_FLOW',
+  operatingCashFlowMonths: 'CASH_FLOW',
+
+  // DERIVED LIQUIDITY
+  monthlyBurnRate:         'DERIVED',
+  cashRunwayMonths:        'DERIVED',
+
+  // XBRL DATA QUALITY
+  xbrlAvailable:           'XBRL_QUALITY',
+  missingConcepts:         'XBRL_QUALITY',
+
+  // GOING CONCERN
+  goingConcernFlag:        'GOING_CONCERN',
+  matchedSentence:         'GOING_CONCERN',
+  matchedPhrase:           'GOING_CONCERN',
+  sourceType:              'GOING_CONCERN',
 };
 
 export const ALL_CATEGORIES = [
@@ -247,4 +291,10 @@ export const ALL_CATEGORIES = [
   'WARRANTS',
   'SHARE_STRUCTURE',
   'CONFIDENCE',
+  'XBRL_PERIOD',
+  'BALANCE_SHEET',
+  'CASH_FLOW',
+  'DERIVED',
+  'XBRL_QUALITY',
+  'GOING_CONCERN',
 ];

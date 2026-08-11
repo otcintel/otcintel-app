@@ -31,6 +31,7 @@ const DATE_FIELDS = new Set([
   'expirationDate',
   'filedAt',
   'periodOfReport',
+  'periodEndDate',
 ]);
 
 /** Fields where exact integer equality is required (no tolerance) */
@@ -42,6 +43,8 @@ const INTEGER_FIELDS = new Set([
   'preferredSharesOutstanding',
   'warrantShares',
   'noteIndex',
+  'fiscalYear',
+  'operatingCashFlowMonths',
 ]);
 
 /** Fields where dollar amounts are compared (exact) */
@@ -56,6 +59,14 @@ const DOLLAR_FIELDS = new Set([
   'warrantExercisePrice',
   'fixedConversionPrice',
   'exchangeCap',
+  // XBRL balance sheet and cash flow amounts (whole dollar integers from EDGAR)
+  'cashAndEquivalents',
+  'currentLiabilities',
+  'accumulatedDeficit',
+  'totalDebt',
+  'operatingCashFlow',
+  'monthlyBurnRate',
+  'cashRunwayMonths',
 ]);
 
 // ─── Month name → number map (for date parsing) ───────────────────────────────
