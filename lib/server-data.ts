@@ -15,12 +15,13 @@
  */
 
 import 'server-only';
-import { getCompaniesRepo, getFilingsRepo } from './db/repositories';
+import { getCompaniesRepo, getFilingsRepo, getFinancialSnapshotsRepo } from './db/repositories';
 import type { CompanyRecord, CompanyConfidenceStatus, CompanyIngestionStatus } from './universe/types';
 import type { NormalizedFiling } from './ingestion/types';
+import type { FinancialSnapshot } from './ingestion/parsers/financials/snapshot';
 
 // Re-export types that pages need
-export type { CompanyRecord, CompanyConfidenceStatus, CompanyIngestionStatus, NormalizedFiling };
+export type { CompanyRecord, CompanyConfidenceStatus, CompanyIngestionStatus, NormalizedFiling, FinancialSnapshot };
 
 // ─── Company list ─────────────────────────────────────────────────────────────
 
@@ -66,6 +67,12 @@ export async function getCompanyRecord(ticker: string): Promise<CompanyRecord | 
 export async function getCompanyFilings(ticker: string): Promise<NormalizedFiling[]> {
   const repo = await getFilingsRepo();
   return repo.getByTicker(ticker);
+}
+
+/** Latest FinancialSnapshot for a ticker, or undefined if none has been ingested. */
+export async function getLatestFinancialSnapshot(ticker: string): Promise<FinancialSnapshot | undefined> {
+  const repo = await getFinancialSnapshotsRepo();
+  return repo.getLatestByCompany(ticker);
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────

@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import Nav from '@/components/Nav';
 import Footer from '@/components/Footer';
-import { getCompanyRecord, getCompanyFilings } from '@/lib/server-data';
+import { getCompanyRecord, getCompanyFilings, getLatestFinancialSnapshot } from '@/lib/server-data';
 import { scoreFinancingRisk, generateCompanyIntelligence } from '@/lib/ingestion';
+import { applyRunwayUplift } from '@/lib/ingestion/runwayIntegration';
 import type { NormalizedFiling, OtcShareStructure, ExtractionConfidence } from '@/lib/ingestion';
 
 /** Banner variant → CSS class mapping for intelligence-derived dilution risk levels. */
@@ -160,9 +161,10 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
   const { ticker } = await params;
   const symbol     = ticker.toUpperCase();
 
-  const [record, filings] = await Promise.all([
+  const [record, filings, financialSnapshot] = await Promise.all([
     getCompanyRecord(symbol),
     getCompanyFilings(symbol),
+    getLatestFinancialSnapshot(symbol),
   ]);
 
   // ── Unknown ticker — not in the ingested universe ───────────────────────────
@@ -246,7 +248,10 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
   const aggregatedStructure    = aggregateShareStructure(filings);
   const otcStructureFiling     = !aggregatedStructure ? filings.find(f => f.otcShareStructure) : undefined;
   const activeOtcStructure: OtcShareStructure | undefined = otcStructureFiling?.otcShareStructure;
-  const riskScore              = scoreFinancingRisk(symbol, activeFinancing, activeStructure);
+  const baseRiskScore          = scoreFinancingRisk(symbol, activeFinancing, activeStructure);
+  const riskScore              = baseRiskScore && financialSnapshot
+    ? applyRunwayUplift(baseRiskScore, financialSnapshot)
+    : baseRiskScore;
   const intelligence           = generateCompanyIntelligence(symbol, filings);
 
   return (
