@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { CompanyRecord, IngestionRun, RunResult } from '../universe/types';
 import type { NormalizedFiling, CompanyIntelligence } from '../ingestion/types';
+import type { FinancialSnapshot } from '../ingestion/parsers/financials/snapshot';
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -24,9 +25,10 @@ const DATA_DIR         = path.join(process.cwd(), 'data');
 const FILINGS_DIR      = path.join(DATA_DIR, 'filings');
 const RUNS_DIR         = path.join(DATA_DIR, 'runs');
 const INTELLIGENCE_DIR = path.join(DATA_DIR, 'intelligence');
+const SNAPSHOTS_DIR    = path.join(DATA_DIR, 'snapshots');
 
 function ensureDirs(): void {
-  for (const d of [DATA_DIR, FILINGS_DIR, RUNS_DIR, INTELLIGENCE_DIR]) {
+  for (const d of [DATA_DIR, FILINGS_DIR, RUNS_DIR, INTELLIGENCE_DIR, SNAPSHOTS_DIR]) {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
   }
 }
@@ -218,5 +220,59 @@ export const intelligenceDb = {
     } catch {
       return [];
     }
+  },
+};
+
+// ─── Financial snapshots ──────────────────────────────────────────────────────
+
+function snapshotsPath(ticker: string): string {
+  return path.join(SNAPSHOTS_DIR, `${ticker.toUpperCase()}.json`);
+}
+
+function readSnapshots(ticker: string): FinancialSnapshot[] {
+  return readJson<FinancialSnapshot[]>(snapshotsPath(ticker), []);
+}
+
+export const snapshotsDb = {
+  getLatestByCompany(ticker: string): FinancialSnapshot | undefined {
+    const all = readSnapshots(ticker);
+    return all[0]; // sorted newest-first by upsert
+  },
+
+  getByCompany(ticker: string): FinancialSnapshot[] {
+    return readSnapshots(ticker);
+  },
+
+  getByAccession(accessionNumber: string): FinancialSnapshot | undefined {
+    // Linear scan across all ticker files — acceptable for filesystem dev mode
+    ensureDirs();
+    try {
+      const files = fs.readdirSync(SNAPSHOTS_DIR).filter(f => f.endsWith('.json') && !f.endsWith('.bak'));
+      for (const file of files) {
+        const snapshots = readJson<FinancialSnapshot[]>(path.join(SNAPSHOTS_DIR, file), []);
+        const found = snapshots.find(s => s.accessionNumber === accessionNumber);
+        if (found) return found;
+      }
+    } catch { /* non-fatal */ }
+    return undefined;
+  },
+
+  upsert(snapshot: FinancialSnapshot): void {
+    const existing = readSnapshots(snapshot.ticker);
+    const byAcc = new Map<string, FinancialSnapshot>();
+    // Key by accessionNumber when set, otherwise by extractedAt (unique per run)
+    for (const s of existing) {
+      byAcc.set(s.accessionNumber ?? `noaccession:${s.extractedAt}`, s);
+    }
+    const key = snapshot.accessionNumber ?? `noaccession:${snapshot.extractedAt}`;
+    byAcc.set(key, snapshot);
+    // Sort newest-first by filedAt, then extractedAt
+    const sorted = [...byAcc.values()].sort((a, b) => {
+      const fa = a.filedAt ?? '';
+      const fb = b.filedAt ?? '';
+      if (fb !== fa) return fb.localeCompare(fa);
+      return b.extractedAt.localeCompare(a.extractedAt);
+    });
+    writeJson(snapshotsPath(snapshot.ticker), sorted);
   },
 };

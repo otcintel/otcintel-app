@@ -24,18 +24,20 @@ import type {
   IFilingsRepository,
   IRunsRepository,
   IIntelligenceRepository,
+  IFinancialSnapshotsRepository,
 } from '@/lib/db/types';
 import type { NormalizedFiling, CompanyIntelligence } from '@/lib/ingestion/types';
 
 // ─── Mocks — hoisted before any import of the module under test ───────────────
 
 vi.mock('@/lib/db/repositories', () => ({
-  getCompaniesRepo:    vi.fn(),
-  getFilingsRepo:      vi.fn(),
-  getRunsRepo:         vi.fn(),
-  getIntelligenceRepo: vi.fn(),
-  resetRepositories:   vi.fn(),
-  getBackendName:      vi.fn().mockReturnValue('postgres'),
+  getCompaniesRepo:          vi.fn(),
+  getFilingsRepo:            vi.fn(),
+  getRunsRepo:               vi.fn(),
+  getIntelligenceRepo:       vi.fn(),
+  getFinancialSnapshotsRepo: vi.fn(),
+  resetRepositories:         vi.fn(),
+  getBackendName:            vi.fn().mockReturnValue('postgres'),
 }));
 
 // Prevent any filesystem access from the db singleton imports
@@ -107,7 +109,13 @@ vi.mock('@/lib/universe/companies', () => ({
 
 // Imports after mocks
 import { runBatchIngestion, selectFinancialFiling } from '@/lib/universe/batchIngestor';
-import { getCompaniesRepo, getFilingsRepo, getRunsRepo, getIntelligenceRepo } from '@/lib/db/repositories';
+import {
+  getCompaniesRepo,
+  getFilingsRepo,
+  getRunsRepo,
+  getIntelligenceRepo,
+  getFinancialSnapshotsRepo,
+} from '@/lib/db/repositories';
 import { ingestTicker } from '@/lib/ingestion';
 import { generateCompanyIntelligence } from '@/lib/ingestion/intelligence/companyIntelligence';
 import { fetchCompanyFacts, resetCompanyFactsCache } from '@/lib/ingestion/fetchers/edgar/companyFacts';
@@ -202,23 +210,35 @@ function makeIntelligenceRepo(): IIntelligenceRepository {
   };
 }
 
+function makeFinancialSnapshotsRepo(): IFinancialSnapshotsRepository {
+  return {
+    getLatestByCompany: vi.fn().mockResolvedValue(undefined),
+    getByCompany:       vi.fn().mockResolvedValue([]),
+    getByAccession:     vi.fn().mockResolvedValue(undefined),
+    upsert:             vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 let mockCompaniesRepo: ICompaniesRepository;
 let mockFilingsRepo: IFilingsRepository;
 let mockRunsRepo: IRunsRepository;
 let mockIntelligenceRepo: IIntelligenceRepository;
+let mockFinancialSnapshotsRepo: IFinancialSnapshotsRepository;
 
 beforeEach(() => {
-  mockCompaniesRepo   = makeCompaniesRepo();
-  mockFilingsRepo     = makeFilingsRepo();
-  mockRunsRepo        = makeRunsRepo();
-  mockIntelligenceRepo = makeIntelligenceRepo();
+  mockCompaniesRepo          = makeCompaniesRepo();
+  mockFilingsRepo            = makeFilingsRepo();
+  mockRunsRepo               = makeRunsRepo();
+  mockIntelligenceRepo       = makeIntelligenceRepo();
+  mockFinancialSnapshotsRepo = makeFinancialSnapshotsRepo();
 
   vi.mocked(getCompaniesRepo).mockResolvedValue(mockCompaniesRepo);
   vi.mocked(getFilingsRepo).mockResolvedValue(mockFilingsRepo);
   vi.mocked(getRunsRepo).mockResolvedValue(mockRunsRepo);
   vi.mocked(getIntelligenceRepo).mockResolvedValue(mockIntelligenceRepo);
+  vi.mocked(getFinancialSnapshotsRepo).mockResolvedValue(mockFinancialSnapshotsRepo);
 
   vi.mocked(ingestTicker).mockResolvedValue(MOCK_PIPELINE_RESULT);
   vi.mocked(generateCompanyIntelligence).mockReturnValue({ ...MOCK_INTELLIGENCE });
@@ -797,15 +817,17 @@ describe('runBatchIngestion — Postgres production path (test 11)', () => {
 describe('runBatchIngestion — filesystem local path (test 12)', () => {
 
   it('builds and attaches snapshot on the filesystem backend path', async () => {
-    const fsCompaniesRepo = makeCompaniesRepo([MOCK_COMPANY]);
-    const fsFilingsRepo   = makeFilingsRepo([]);
-    const fsRunsRepo      = makeRunsRepo();
-    const fsIntelRepo     = makeIntelligenceRepo();
+    const fsCompaniesRepo   = makeCompaniesRepo([MOCK_COMPANY]);
+    const fsFilingsRepo     = makeFilingsRepo([]);
+    const fsRunsRepo        = makeRunsRepo();
+    const fsIntelRepo       = makeIntelligenceRepo();
+    const fsSnapshotsRepo   = makeFinancialSnapshotsRepo();
 
     vi.mocked(getCompaniesRepo).mockResolvedValue(fsCompaniesRepo);
     vi.mocked(getFilingsRepo).mockResolvedValue(fsFilingsRepo);
     vi.mocked(getRunsRepo).mockResolvedValue(fsRunsRepo);
     vi.mocked(getIntelligenceRepo).mockResolvedValue(fsIntelRepo);
+    vi.mocked(getFinancialSnapshotsRepo).mockResolvedValue(fsSnapshotsRepo);
 
     vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
     vi.mocked(fsFilingsRepo.getByTicker as ReturnType<typeof vi.fn>)
@@ -819,6 +841,67 @@ describe('runBatchIngestion — filesystem local path (test 12)', () => {
 
     const intel = vi.mocked(fsIntelRepo.upsert).mock.calls[0][0];
     expect(intel.financialSnapshot).toBeDefined();
+  });
+
+});
+
+// ─── Step 6: financial_snapshots repo persistence ─────────────────────────────
+
+describe('runBatchIngestion — Postgres backend writes to financial_snapshots (Step 6, test A)', () => {
+
+  it('calls financialSnapshotsRepo.upsert with the built snapshot', async () => {
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
+    vi.mocked(mockFilingsRepo.getByTicker)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(mockFinancialSnapshotsRepo.upsert).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(mockFinancialSnapshotsRepo.upsert).mock.calls[0][0];
+    expect(persisted).toBeDefined();
+    expect(persisted.ticker).toBe('ABVC');
+  });
+
+  it('financialSnapshotsRepo.upsert failure is non-fatal — intelligence still upserted', async () => {
+    vi.mocked(mockFinancialSnapshotsRepo.upsert).mockRejectedValueOnce(
+      new Error('Supabase write failed'),
+    );
+
+    const run = await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    // Company must still complete (snapshot persistence error is non-fatal)
+    expect(run.status).toBe('completed');
+    expect(run.companiesCompleted).toBe(1);
+  });
+
+});
+
+describe('runBatchIngestion — filesystem backend financialSnapshotsRepo (Step 6, test B)', () => {
+
+  it('calls filesystemFinancialSnapshotsRepo.upsert on the filesystem path', async () => {
+    const fsCompaniesRepo   = makeCompaniesRepo([MOCK_COMPANY]);
+    const fsFilingsRepo     = makeFilingsRepo([]);
+    const fsRunsRepo        = makeRunsRepo();
+    const fsIntelRepo       = makeIntelligenceRepo();
+    const fsSnapshotsRepo   = makeFinancialSnapshotsRepo();
+
+    vi.mocked(getCompaniesRepo).mockResolvedValue(fsCompaniesRepo);
+    vi.mocked(getFilingsRepo).mockResolvedValue(fsFilingsRepo);
+    vi.mocked(getRunsRepo).mockResolvedValue(fsRunsRepo);
+    vi.mocked(getIntelligenceRepo).mockResolvedValue(fsIntelRepo);
+    vi.mocked(getFinancialSnapshotsRepo).mockResolvedValue(fsSnapshotsRepo);
+
+    vi.mocked(ingestTicker).mockResolvedValue({ ...MOCK_PIPELINE_WITH_10K });
+    vi.mocked(fsFilingsRepo.getByTicker as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([MOCK_10K_FILING]);
+
+    await runBatchIngestion({ tickers: ['ABVC'], includeAlreadyParsed: true });
+
+    expect(fsSnapshotsRepo.upsert).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(fsSnapshotsRepo.upsert).mock.calls[0][0];
+    expect(persisted.ticker).toBe('ABVC');
   });
 
 });

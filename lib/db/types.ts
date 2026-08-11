@@ -12,6 +12,7 @@
 
 import type { CompanyRecord, IngestionRun, RunResult } from '../universe/types';
 import type { NormalizedFiling, CompanyIntelligence } from '../ingestion/types';
+import type { FinancialSnapshot } from '../ingestion/parsers/financials/snapshot';
 
 // ─── Companies ────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,29 @@ export interface IIntelligenceRepository {
   getAllTickers(): Promise<string[]>;
 }
 
+// ─── Financial snapshots ──────────────────────────────────────────────────────
+
+export interface IFinancialSnapshotsRepository {
+  /**
+   * Most recent snapshot for a company (by filed_at DESC, then extracted_at DESC).
+   * Returns undefined when no snapshot exists yet.
+   */
+  getLatestByCompany(ticker: string): Promise<FinancialSnapshot | undefined>;
+
+  /** All snapshots for a company, newest-first by filed_at. */
+  getByCompany(ticker: string): Promise<FinancialSnapshot[]>;
+
+  /** Snapshot by exact accession number (undefined if not found). */
+  getByAccession(accessionNumber: string): Promise<FinancialSnapshot | undefined>;
+
+  /**
+   * Insert or update a snapshot.
+   * Conflict key: (company_id, accession_number) when accession_number is set.
+   * When accession_number is null, always inserts a new row.
+   */
+  upsert(snapshot: FinancialSnapshot): Promise<void>;
+}
+
 // ─── Combined ─────────────────────────────────────────────────────────────────
 
 export interface IRepositories {
@@ -103,4 +127,5 @@ export interface IRepositories {
   filings: IFilingsRepository;
   runs: IRunsRepository;
   intelligence: IIntelligenceRepository;
+  financialSnapshots: IFinancialSnapshotsRepository;
 }

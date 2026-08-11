@@ -13,8 +13,9 @@ import type {
   IFilingsRepository,
   IRunsRepository,
   IIntelligenceRepository,
+  IFinancialSnapshotsRepository,
 } from './types';
-import { companiesDb, filingsDb, runsDb, intelligenceDb } from './index';
+import { companiesDb, filingsDb, runsDb, intelligenceDb, snapshotsDb } from './index';
 
 export const filesystemCompaniesRepo: ICompaniesRepository = {
   async getAll()                           { return companiesDb.getAll(); },
@@ -47,4 +48,11 @@ export const filesystemIntelligenceRepo: IIntelligenceRepository = {
   async getByTicker(ticker)                { return intelligenceDb.getByTicker(ticker); },
   async upsert(intelligence)               { return intelligenceDb.upsert(intelligence); },
   async getAllTickers()                     { return intelligenceDb.getAllTickers(); },
+};
+
+export const filesystemFinancialSnapshotsRepo: IFinancialSnapshotsRepository = {
+  async getLatestByCompany(ticker)         { return snapshotsDb.getLatestByCompany(ticker); },
+  async getByCompany(ticker)               { return snapshotsDb.getByCompany(ticker); },
+  async getByAccession(accessionNumber)    { return snapshotsDb.getByAccession(accessionNumber); },
+  async upsert(snapshot)                   { return snapshotsDb.upsert(snapshot); },
 };

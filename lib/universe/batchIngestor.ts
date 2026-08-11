@@ -29,11 +29,13 @@ import {
   getFilingsRepo,
   getRunsRepo,
   getIntelligenceRepo,
+  getFinancialSnapshotsRepo,
 } from '../db/repositories';
 import type {
   ICompaniesRepository,
   IFilingsRepository,
   IIntelligenceRepository,
+  IFinancialSnapshotsRepository,
 } from '../db/types';
 import { seedToRecord, applyIngestionResult, getStaleFilings } from './companies';
 import { ingestTicker } from '../ingestion';
@@ -229,6 +231,7 @@ interface IngestionRepos {
   companies: ICompaniesRepository;
   filings: IFilingsRepository;
   intelligence: IIntelligenceRepository;
+  financialSnapshots: IFinancialSnapshotsRepository;
 }
 
 /** Track which batches are currently running to prevent double-starts */
@@ -249,11 +252,12 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
   // Initialize backend-aware repositories once.
   // On Vercel (PERSISTENCE_BACKEND=postgres) these go to Supabase.
   // Locally (PERSISTENCE_BACKEND=filesystem) these delegate to the JSON store.
-  const [companiesRepo, filingsRepo, runsRepo, intelligenceRepo] = await Promise.all([
+  const [companiesRepo, filingsRepo, runsRepo, intelligenceRepo, snapshotsRepo] = await Promise.all([
     getCompaniesRepo(),
     getFilingsRepo(),
     getRunsRepo(),
     getIntelligenceRepo(),
+    getFinancialSnapshotsRepo(),
   ]);
 
   const run: IngestionRun = {
@@ -280,7 +284,12 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
   // EDGAR request in this run.
   resetCompanyFactsCache();
 
-  const repos: IngestionRepos = { companies: companiesRepo, filings: filingsRepo, intelligence: intelligenceRepo };
+  const repos: IngestionRepos = {
+    companies:          companiesRepo,
+    filings:            filingsRepo,
+    intelligence:       intelligenceRepo,
+    financialSnapshots: snapshotsRepo,
+  };
 
   try {
     // Build target company list via the backend-aware repo.
@@ -412,11 +421,14 @@ async function ingestOneCompany(
 
     const intelligence = generateCompanyIntelligence(company.ticker, allFilings);
 
-    // Build XBRL + going-concern financial snapshot and attach to intelligence.
+    // Build XBRL + going-concern financial snapshot, attach to intelligence,
+    // and persist to the financial_snapshots table.
     // Non-fatal: financing intelligence is preserved even if snapshot generation
-    // fails (e.g. EDGAR rate-limit spike, transient network error).
+    // or persistence fails (e.g. EDGAR rate-limit spike, transient network error).
     try {
-      intelligence.financialSnapshot = await buildSnapshotForCompany(company, result, allFilings);
+      const snapshot = await buildSnapshotForCompany(company, result, allFilings);
+      intelligence.financialSnapshot = snapshot;
+      await repos.financialSnapshots.upsert(snapshot);
     } catch (err) {
       if (opts.verbose) {
         console.warn(
