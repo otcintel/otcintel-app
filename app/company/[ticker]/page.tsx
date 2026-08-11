@@ -4,6 +4,8 @@ import Footer from '@/components/Footer';
 import { getCompanyRecord, getCompanyFilings, getLatestFinancialSnapshot } from '@/lib/server-data';
 import { scoreFinancingRisk, generateCompanyIntelligence } from '@/lib/ingestion';
 import { applyRunwayUplift } from '@/lib/ingestion/runwayIntegration';
+import { buildLiquidityRiskAssessment } from '@/lib/ingestion/liquidityDisplay';
+import type { LiquidityRiskAssessment } from '@/lib/ingestion/liquidityDisplay';
 import type { NormalizedFiling, OtcShareStructure, ExtractionConfidence } from '@/lib/ingestion';
 
 /** Banner variant → CSS class mapping for intelligence-derived dilution risk levels. */
@@ -254,6 +256,22 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
     : baseRiskScore;
   const intelligence           = generateCompanyIntelligence(symbol, filings);
 
+  // Liquidity Risk — separate dimension, no numeric score.
+  // hasUnquantifiedFinancing: financing detected in filings but lacks scoreable structured terms.
+  const hasUnquantifiedFinancing = !baseRiskScore && (
+    intelligence.financingProfile.totalConvertiblePrincipal > 0 ||
+    intelligence.financingProfile.totalEquityFacilityCommitment > 0 ||
+    intelligence.financingProfile.hasActiveEloc ||
+    !!activeFinancing
+  );
+  const liquidityAssessment: LiquidityRiskAssessment | undefined = financialSnapshot
+    ? buildLiquidityRiskAssessment(financialSnapshot, hasUnquantifiedFinancing)
+    : undefined;
+  // Meaningful = classifiable runway OR a going-concern flag (either warrants display).
+  const showLiquiditySection = liquidityAssessment !== undefined && (
+    liquidityAssessment.runwayStatus !== 'insufficient_data' || liquidityAssessment.goingConcernFlag
+  );
+
   return (
     <>
       <Nav />
@@ -298,7 +316,31 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
               Risk Score: {riskScore.score} / 100
             </div>
           </div>
-        ) : (() => {
+        ) : showLiquiditySection && liquidityAssessment ? (() => {
+          const la            = liquidityAssessment;
+          const bannerVariant = la.displayColor === 'red' ? 'red-risk' : la.displayColor === 'amber' ? 'amber-risk' : 'green-risk';
+          const dotColor      = la.displayColor === 'red' ? 'var(--red)' : la.displayColor === 'amber' ? 'var(--amber)' : 'var(--green)';
+          const pillVariant   = la.displayColor === 'muted' ? 'green' : la.displayColor;
+          return (
+            <div className={`risk-banner ${bannerVariant}`}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div className="risk-dot" style={{ background: dotColor }} />
+                <div className="risk-banner-text">
+                  <strong>Liquidity Risk: {la.displayLabel}.</strong>{' '}
+                  {la.displayReason}
+                  {la.gcWarning && (
+                    <> · <strong>Going concern:</strong> {la.gcWarning}</>
+                  )}
+                </div>
+              </div>
+              {la.cashRunwayMonths !== undefined && (
+                <div className={`risk-score-pill ${pillVariant}`}>
+                  {la.cashRunwayMonths.toFixed(1)} mo runway
+                </div>
+              )}
+            </div>
+          );
+        })() : (() => {
           const dr = intelligence.overview.dilutionRisk;
           const b  = DILUTION_RISK_BANNER[dr] ?? DILUTION_RISK_BANNER.moderate;
           return (
@@ -609,9 +651,11 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
 
         </div>
 
-        {/* RISK SCORE */}
+        {/* RISK SCORE / LIQUIDITY RISK */}
         <div className="section-divider">
-          <span className="section-divider-label">OTCIntel risk score</span>
+          <span className="section-divider-label">
+            {!riskScore && showLiquiditySection ? 'Liquidity risk' : 'OTCIntel risk score'}
+          </span>
           <div className="section-divider-line" />
         </div>
 
@@ -659,7 +703,77 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
               </div>
             </div>
           </div>
-        ) : (
+        ) : showLiquiditySection && liquidityAssessment ? (() => {
+          const la         = liquidityAssessment;
+          const labelColor = la.displayColor === 'red' ? '#f87171' : la.displayColor === 'amber' ? 'var(--amber)' : la.displayColor === 'green' ? '#4ade80' : 'var(--text-muted)';
+          const tagVariant = la.displayColor === 'red' ? 'danger' : la.displayColor === 'amber' ? 'warning' : la.displayColor === 'green' ? 'positive' : 'neutral';
+          return (
+            <div className="two-col" style={{ marginBottom: '1.5rem' }}>
+              {/* Liquidity status card */}
+              <div className="card">
+                <div className="card-body" style={{ padding: '1.5rem' }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '0.6rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                    Liquidity Risk
+                  </div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: '1.4rem', fontWeight: 700, letterSpacing: '0.04em', color: labelColor, marginBottom: '0.5rem' }}>
+                    {la.displayLabel}
+                  </div>
+                  {la.cashRunwayMonths !== undefined && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginBottom: '0.75rem' }}>
+                      {la.cashRunwayMonths.toFixed(1)} months estimated cash runway
+                    </div>
+                  )}
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: '0.75rem' }}>
+                    {la.displayReason}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                    This is a standalone Liquidity Risk assessment derived from XBRL financial data.
+                    An OTCIntel Risk Score requires structured financing terms and is not available for this company.
+                    {la.hasUnquantifiedFinancing && (
+                      <> Financing activity was detected in filings but lacks the structured terms needed for quantitative scoring.</>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {/* Risk signals card */}
+              <div className="card">
+                <div className="card-head">
+                  <span className="card-title">Risk signals</span>
+                  <span className={`tag ${tagVariant}`}>Liquidity only</span>
+                </div>
+                <div className="card-body">
+                  {la.gcWarning && (
+                    <div className="risk-driver" style={{ marginBottom: '0.75rem' }}>
+                      <div className="risk-driver-dot" style={{ background: 'var(--red)' }} />
+                      <div className="risk-driver-text">
+                        <strong>Going concern:</strong> {la.gcWarning}
+                      </div>
+                    </div>
+                  )}
+                  {intelligence.keyRisks.slice(0, 3).map((risk, i) => (
+                    <div className="risk-driver" key={i}>
+                      <div className="risk-driver-dot" style={{
+                        background: risk.severity === 'critical' || risk.severity === 'high'
+                          ? 'var(--red)' : risk.severity === 'moderate' ? 'var(--amber)' : 'var(--text-muted)',
+                      }} />
+                      <div className="risk-driver-text">
+                        <strong>{risk.label}:</strong> {risk.detail}
+                      </div>
+                    </div>
+                  ))}
+                  {!la.gcWarning && intelligence.keyRisks.length === 0 && (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', padding: '0.5rem 0' }}>
+                      No additional risk signals identified in the analyzed filings.
+                    </div>
+                  )}
+                  <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--rule)', fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                    Liquidity classification is a separate dimension from the OTCIntel Risk Score and does not constitute one.
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })() : (
           <div className="two-col" style={{ marginBottom: '1.5rem' }}>
             <div className="card">
               <div className="card-body" style={{ padding: '1.5rem' }}>
@@ -708,6 +822,57 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
             </div>
           </div>
         )}
+
+        {/* LIQUIDITY RISK — detail panel when financing score also present */}
+        {riskScore && showLiquiditySection && liquidityAssessment && (() => {
+          const la         = liquidityAssessment;
+          const labelColor = la.displayColor === 'red' ? '#f87171' : la.displayColor === 'amber' ? 'var(--amber)' : la.displayColor === 'green' ? '#4ade80' : 'var(--text-muted)';
+          return (
+            <>
+              <div className="section-divider">
+                <span className="section-divider-label">Liquidity risk</span>
+                <div className="section-divider-line" />
+              </div>
+              <div className="card" style={{ marginBottom: '1.5rem' }}>
+                <div className="card-body" style={{ padding: '1.25rem 1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '0.55rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        Liquidity Risk
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: '1.1rem', fontWeight: 700, color: labelColor }}>
+                        {la.displayLabel}
+                      </div>
+                    </div>
+                    {la.cashRunwayMonths !== undefined && (
+                      <div style={{ borderLeft: '1px solid var(--rule)', paddingLeft: '1.5rem' }}>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '0.55rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Runway
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>
+                          {la.cashRunwayMonths.toFixed(1)} mo
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: '200px' }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', lineHeight: 1.55 }}>
+                        {la.displayReason}
+                      </div>
+                      {la.gcWarning && (
+                        <div style={{ marginTop: '0.35rem', fontSize: '0.73rem', color: '#f87171', lineHeight: 1.5 }}>
+                          ⚠ Going concern: {la.gcWarning}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--rule)', fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    Liquidity Risk is a separate dimension from the OTCIntel Risk Score above. No numeric liquidity score is produced.
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
 
         {/* COMPANY INTELLIGENCE SUMMARY */}
         <div className="section-divider">
