@@ -192,6 +192,115 @@ describe('scoreFinancingRisk — equity line', () => {
   });
 });
 
+// ─── Eligibility gate: financing type ─────────────────────────────────────────
+
+describe('scoreFinancingRisk — eligibility gate: financing type', () => {
+  it('preferred_stock returns undefined even when other fields are populated', () => {
+    // WRAP/NTRB/NVVE-style: preferred stock. Conversion mechanics (liquidation preference,
+    // weighted-average anti-dilution) do not map to the 5-factor convertible-note model.
+    expect(scoreFinancingRisk('WRAP', financing({
+      financingType: 'preferred_stock',
+      discountRate: 0.10,
+      hasResetProvisions: true,
+      hasFloorPrice: false,
+    }))).toBeUndefined();
+  });
+
+  it('warrant_only returns undefined', () => {
+    expect(scoreFinancingRisk('TEST', financing({
+      financingType: 'warrant_only',
+      warrantShares: 10_000_000,
+    }))).toBeUndefined();
+  });
+
+  it('convertible_note with known discount remains scoreable', () => {
+    // VNRX-style: disc=0.10, 20-day lookback, conv note — must still produce a score.
+    const result = scoreFinancingRisk('VNRX', financing({
+      financingType: 'convertible_note',
+      discountRate: 0.10,
+      lookbackDays: 20,
+      hasResetProvisions: false,
+      hasFloorPrice: false,
+    }));
+    expect(result).toBeDefined();
+    // 20×0.30 + 90×0.20 + 0 + 18×0.20 + 90×0.10 = 6+18+0+3.6+9 = 36.6 → 37
+    expect(result!.score).toBe(37);
+    expect(result!.level).toBe('low');
+  });
+
+  it('equity_line with known discount remains scoreable', () => {
+    const result = scoreFinancingRisk('TEST', financing({
+      financingType: 'equity_line',
+      discountRate: 0.05,
+      hasResetProvisions: false,
+      hasFloorPrice: false,
+    }));
+    expect(result).toBeDefined();
+    expect(result!.score).toBeGreaterThan(0);
+  });
+});
+
+// ─── Eligibility gate: mandatory discount ─────────────────────────────────────
+
+describe('scoreFinancingRisk — eligibility gate: mandatory discount', () => {
+  it('convertible_note with missing discount returns undefined (CANN/CENN/LIQT-style)', () => {
+    // discountRate was never extracted — defaulting to 50 would fabricate a risk assertion.
+    expect(scoreFinancingRisk('CANN', financing({
+      financingType: 'convertible_note',
+      discountRate: undefined,
+      hasResetProvisions: false,
+      hasFloorPrice: false,
+    }))).toBeUndefined();
+  });
+
+  it('convertible_note with reset=true but no discount returns undefined (CUEN-style)', () => {
+    // reset=true is a known signal but without discountRate the model cannot score.
+    expect(scoreFinancingRisk('CUEN', financing({
+      financingType: 'convertible_note',
+      discountRate: undefined,
+      hasResetProvisions: true,
+      hasFloorPrice: false,
+    }))).toBeUndefined();
+  });
+
+  it('equity_line with missing discount returns undefined (TUSK-style)', () => {
+    expect(scoreFinancingRisk('TUSK', financing({
+      financingType: 'equity_line',
+      discountRate: undefined,
+      hasResetProvisions: false,
+      hasFloorPrice: false,
+    }))).toBeUndefined();
+  });
+
+  it('preferred_stock returns undefined regardless of fields (WRAP/NTRB/NVVE-style)', () => {
+    // Belt-and-suspenders: preferred_stock is type-ineligible independent of discount state.
+    expect(scoreFinancingRisk('NTRB', financing({
+      financingType: 'preferred_stock',
+      discountRate: undefined,
+      hasResetProvisions: false,
+      hasFloorPrice: false,
+    }))).toBeUndefined();
+  });
+
+  it('MFON-style: discountRate=0.90 is scoreable in this step (parser/domain validation deferred)', () => {
+    // MFON's stored discountRate=0.90 is suspicious — likely an inverse-form parser failure
+    // that should yield 0.10 ("90% of VWAP" → 10% discount). Parser correction and any
+    // domain-sanity cap are intentionally deferred. The eligibility gate checks presence
+    // only, not plausibility, so MFON still receives a score in this step.
+    const result = scoreFinancingRisk('MFON', financing({
+      financingType: 'convertible_note',
+      discountRate: 0.90,
+      hasResetProvisions: true,
+      hasFloorPrice: false,
+    }));
+    expect(result).toBeDefined();
+    // discountFactor(0.90): pct=90 ≥ 30 → 95
+    // lookback: undefined → default 40; reset: true → 90; floor: false → 90; warrants: 0
+    // 95×0.30 + 40×0.20 + 0 + 90×0.20 + 90×0.10 = 28.5+8+0+18+9 = 63.5 → 64
+    expect(result!.score).toBe(64);
+  });
+});
+
 // ─── Exact score verification for known inputs ────────────────────────────────
 
 describe('scoreFinancingRisk — exact score for WXYZ mock data', () => {

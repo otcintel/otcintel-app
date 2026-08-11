@@ -194,10 +194,24 @@ export function scoreFinancingRisk(
 ): RiskScoreRecord | undefined {
   if (!financing || financing.financingType === 'unknown') return undefined;
 
+  // Type eligibility: the five-factor model is designed for market-linked convertible
+  // instruments. preferred_stock and warrant_only have different conversion mechanics
+  // and are explicitly ineligible for this model.
+  if (
+    financing.financingType !== 'convertible_note' &&
+    financing.financingType !== 'equity_line'
+  ) return undefined;
+
+  // Mandatory pricing input: discount rate must be extracted from the filing.
+  // Substituting a numeric assumption when discount is unknown fabricates a risk
+  // assertion (domain rules 1 and 6).
+  if (financing.discountRate === undefined) return undefined;
+
   const sharesOut = shareStructure?.sharesOutstanding ?? 0;
 
   // ── Compute factor scores ──
-  const discountScore  = financing.discountRate  !== undefined ? discountFactor(financing.discountRate)  : 50;
+  // discountRate is guaranteed defined by the gate above.
+  const discountScore  = discountFactor(financing.discountRate);
   const lookbackScore  = financing.lookbackDays  !== undefined ? lookbackFactor(financing.lookbackDays)  : 40;
   const warrantScore   = financing.warrantShares !== undefined ? warrantFactor(financing.warrantShares, sharesOut) : 0;
   const resetScore     = financing.hasResetProvisions ? 90 : 18;
