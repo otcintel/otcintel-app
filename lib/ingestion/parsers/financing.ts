@@ -224,31 +224,37 @@ export function parseFinancingTerms(text: string): ExtractedFinancingTerms | und
   // ── Floor price ──
   let floorPrice: number | null | undefined;
   let hasFloorPrice = false;
+  let hasFloorPriceDetermined = false;
   const noFloorMatch = NO_FLOOR_PATTERNS.some(p => p.test(text));
   if (noFloorMatch) {
     floorPrice = null;
     hasFloorPrice = false;
+    hasFloorPriceDetermined = true;  // explicit no-floor statement found
     matchedPhrases.push('(no floor price stated)');
   } else {
     const floorMatch = firstMatch(text, FLOOR_PRICE_PATTERNS);
     if (floorMatch) {
       floorPrice = parseFloat(floorMatch[1]);
       hasFloorPrice = true;
+      hasFloorPriceDetermined = true;  // explicit floor price found
       matchedPhrases.push(floorMatch[0].trim());
       confidencePoints += 1;
     }
+    // else: neither pattern matched — hasFloorPriceDetermined remains false (silence)
   }
 
   // ── Reset provisions ──
   // Check for explicit negation first — "does not contain anti-dilution provisions" etc.
   const noResetExplicit = NO_RESET_PATTERNS.some(p => p.test(text));
   const hasResetProvisions = !noResetExplicit && RESET_PATTERNS.some(p => p.test(text));
+  const hasResetProvisionsDetermined = hasResetProvisions || noResetExplicit;
   if (hasResetProvisions) {
     const resetMatch = firstMatch(text, RESET_PATTERNS);
     if (resetMatch) matchedPhrases.push(resetMatch[0].trim());
   } else if (noResetExplicit) {
     matchedPhrases.push('(no reset provisions stated)');
   }
+  // else: neither pattern matched — hasResetProvisionsDetermined remains false (silence)
 
   // ── Warrants ──
   let warrantShares: number | undefined;
@@ -294,7 +300,9 @@ export function parseFinancingTerms(text: string): ExtractedFinancingTerms | und
     lookbackDays,
     floorPrice,
     hasFloorPrice,
+    hasFloorPriceDetermined,
     hasResetProvisions,
+    hasResetProvisionsDetermined,
     warrantShares,
     warrantExercisePrice,
     maturityDate,

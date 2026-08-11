@@ -9,7 +9,9 @@ function financing(overrides: Partial<ExtractedFinancingTerms> = {}): ExtractedF
     financingType: 'convertible_note',
     confidence: 'high',
     hasFloorPrice: false,
+    hasFloorPriceDetermined: true,    // default: treat fixture floor state as explicitly known
     hasResetProvisions: false,
+    hasResetProvisionsDetermined: true, // default: treat fixture reset state as explicitly known
     matchedPhrases: [],
     ...overrides,
   };
@@ -298,6 +300,184 @@ describe('scoreFinancingRisk — eligibility gate: mandatory discount', () => {
     // lookback: undefined → default 40; reset: true → 90; floor: false → 90; warrants: 0
     // 95×0.30 + 40×0.20 + 0 + 90×0.20 + 90×0.10 = 28.5+8+0+18+9 = 63.5 → 64
     expect(result!.score).toBe(64);
+  });
+});
+
+// ─── Scoring provenance ───────────────────────────────────────────────────────
+
+describe('scoreFinancingRisk — scoreBasis', () => {
+  it('always returns scoreBasis="valid" for any scoreable record', () => {
+    const result = scoreFinancingRisk('TEST', financing({ discountRate: 0.15 }));
+    expect(result!.scoreBasis).toBe('valid');
+  });
+});
+
+describe('scoreFinancingRisk — knownFactors / unknownFactors', () => {
+  it('full convertible note: all factors known', () => {
+    // Explicit floor, explicit no-reset, known lookback, known warrants
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.22,
+      lookbackDays: 10,
+      warrantShares: 5_000_000,
+      hasFloorPrice: true,
+      hasFloorPriceDetermined: true,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(result!.knownFactors).toContain('discountRate');
+    expect(result!.knownFactors).toContain('lookbackDays');
+    expect(result!.knownFactors).toContain('warrantShares');
+    expect(result!.knownFactors).toContain('floorPrice');
+    expect(result!.knownFactors).toContain('resetProvisions');
+    expect(result!.unknownFactors).toHaveLength(0);
+    expect(result!.dataWarnings).toHaveLength(0);
+  });
+
+  it('VNRX-style partial: lookback known, warrants unknown, floor/reset determined', () => {
+    // disc=0.10, lkb=20, no warrants extracted, explicit no-floor, explicit no-reset
+    const result = scoreFinancingRisk('VNRX', financing({
+      discountRate: 0.10,
+      lookbackDays: 20,
+      warrantShares: undefined,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: true,   // explicit no-floor phrase found
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true, // explicit no-reset phrase found
+    }));
+    expect(result!.knownFactors).toContain('discountRate');
+    expect(result!.knownFactors).toContain('lookbackDays');
+    expect(result!.knownFactors).toContain('floorPrice');
+    expect(result!.knownFactors).toContain('resetProvisions');
+    expect(result!.unknownFactors).toContain('warrantShares');
+    expect(result!.unknownFactors).not.toContain('floorPrice');
+    expect(result!.unknownFactors).not.toContain('resetProvisions');
+    expect(result!.dataWarnings).toHaveLength(0);
+  });
+
+  it('lookbackDays missing → unknownFactors includes lookbackDays', () => {
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      lookbackDays: undefined,
+      hasFloorPriceDetermined: true,
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(result!.unknownFactors).toContain('lookbackDays');
+    expect(result!.knownFactors).not.toContain('lookbackDays');
+  });
+
+  it('warrantShares missing → unknownFactors includes warrantShares', () => {
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      warrantShares: undefined,
+      hasFloorPriceDetermined: true,
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(result!.unknownFactors).toContain('warrantShares');
+    expect(result!.knownFactors).not.toContain('warrantShares');
+  });
+
+  it('hasFloorPriceDetermined=false → unknownFactors includes floorPrice', () => {
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: false,  // silence — neither pattern matched
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(result!.unknownFactors).toContain('floorPrice');
+    expect(result!.knownFactors).not.toContain('floorPrice');
+  });
+
+  it('hasResetProvisionsDetermined=false → unknownFactors includes resetProvisions', () => {
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasResetProvisions: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisionsDetermined: false, // silence — neither pattern matched
+    }));
+    expect(result!.unknownFactors).toContain('resetProvisions');
+    expect(result!.knownFactors).not.toContain('resetProvisions');
+  });
+
+  it('explicit floor (hasFloorPriceDetermined=true) → knownFactors includes floorPrice, no warning', () => {
+    const withFloor = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasFloorPrice: true,
+      hasFloorPriceDetermined: true,
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(withFloor!.knownFactors).toContain('floorPrice');
+    expect(withFloor!.dataWarnings.some(w => w.includes('floorPrice'))).toBe(false);
+  });
+
+  it('explicit no-floor (determined=true, hasFloorPrice=false) → known, no warning', () => {
+    const noFloor = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: true,   // explicit "no floor price stated"
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(noFloor!.knownFactors).toContain('floorPrice');
+    expect(noFloor!.dataWarnings.some(w => w.includes('floorPrice'))).toBe(false);
+  });
+
+  it('silent floor (determined=false) → unknown + dataWarning about conservative inference', () => {
+    const silentFloor = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: false,  // silence — no pattern matched
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(silentFloor!.unknownFactors).toContain('floorPrice');
+    expect(silentFloor!.dataWarnings.some(w => w.includes('floorPrice'))).toBe(true);
+  });
+
+  it('explicit reset (determined=true, hasResetProvisions=true) → known, no warning', () => {
+    const withReset = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasResetProvisions: true,
+      hasFloorPriceDetermined: true,
+      hasResetProvisionsDetermined: true,
+    }));
+    expect(withReset!.knownFactors).toContain('resetProvisions');
+    expect(withReset!.dataWarnings.some(w => w.includes('resetProvisions'))).toBe(false);
+  });
+
+  it('explicit no-reset (determined=true, hasResetProvisions=false) → known, no warning', () => {
+    const noReset = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasResetProvisions: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisionsDetermined: true,  // explicit "no reset provisions stated"
+    }));
+    expect(noReset!.knownFactors).toContain('resetProvisions');
+    expect(noReset!.dataWarnings.some(w => w.includes('resetProvisions'))).toBe(false);
+  });
+
+  it('silent reset (determined=false) → unknown + dataWarning', () => {
+    const silentReset = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.15,
+      hasResetProvisions: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisionsDetermined: false, // silence
+    }));
+    expect(silentReset!.unknownFactors).toContain('resetProvisions');
+    expect(silentReset!.dataWarnings.some(w => w.includes('resetProvisions'))).toBe(true);
+  });
+
+  it('all unknown except discountRate → four unknownFactors and two dataWarnings', () => {
+    // Worst-case extraction: only type and discount found
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.20,
+      lookbackDays: undefined,
+      warrantShares: undefined,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: false,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: false,
+    }));
+    expect(result!.knownFactors).toEqual(['discountRate']);
+    expect(result!.unknownFactors).toHaveLength(4);
+    expect(result!.dataWarnings).toHaveLength(2);
   });
 });
 

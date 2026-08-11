@@ -225,6 +225,41 @@ export function scoreFinancingRisk(
     floor:    floorScore,
   };
 
+  // ── Scoring provenance ──
+  const knownFactors: string[] = ['discountRate']; // guaranteed present by eligibility gate
+  const unknownFactors: string[] = [];
+  const dataWarnings: string[] = [];
+
+  if (financing.lookbackDays !== undefined) {
+    knownFactors.push('lookbackDays');
+  } else {
+    unknownFactors.push('lookbackDays');
+  }
+
+  if (financing.warrantShares !== undefined) {
+    knownFactors.push('warrantShares');
+  } else {
+    unknownFactors.push('warrantShares');
+  }
+
+  if (financing.hasFloorPriceDetermined) {
+    knownFactors.push('floorPrice');
+  } else {
+    unknownFactors.push('floorPrice');
+    dataWarnings.push(
+      'floorPrice: no floor statement found in filing text — scored conservatively as absent (no floor protection assumed)',
+    );
+  }
+
+  if (financing.hasResetProvisionsDetermined) {
+    knownFactors.push('resetProvisions');
+  } else {
+    unknownFactors.push('resetProvisions');
+    dataWarnings.push(
+      'resetProvisions: no reset statement found in filing text — scored as absent from silence (may understate risk if provisions exist)',
+    );
+  }
+
   // ── Overall score — weighted average ──
   const score = Math.round(
     discountScore * 0.30 +
@@ -316,5 +351,9 @@ export function scoreFinancingRisk(
     bannerMessage,
     factors,
     drivers,
+    scoreBasis: 'valid' as const,
+    knownFactors,
+    unknownFactors,
+    dataWarnings,
   };
 }

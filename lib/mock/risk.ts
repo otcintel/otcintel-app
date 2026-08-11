@@ -50,6 +50,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
         text: '<strong>No floor price stated.</strong> Absent a contractual minimum, share issuance from the note escalates without limit as stock price declines.',
       },
     ],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
   EFGH: {
@@ -92,6 +96,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
         text: '<strong>Floor price of $0.18 stated.</strong> A contractual conversion minimum limits share issuance from the note to approximately 2,367,424 shares regardless of how far the stock declines below $0.18.',
       },
     ],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
   ABCD: {
@@ -134,6 +142,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
         text: '<strong>No floor price stated.</strong> Absent a contractual minimum, share issuance from the note escalates without limit as stock price declines.',
       },
     ],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
   MNOP: {
@@ -155,6 +167,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
       { name: 'Floor price',      fillWidth: 90, fillColor: 'var(--red)', label: 'High', labelColor: 'var(--red)' },
     ],
     drivers: [],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
   QRST: {
@@ -176,6 +192,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
       { name: 'Floor price',      fillWidth: 60, fillColor: 'var(--amber)', label: 'Med', labelColor: 'var(--amber)' },
     ],
     drivers: [],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
   UVWX: {
@@ -197,6 +217,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
       { name: 'Floor price',      fillWidth: 0,  fillColor: 'var(--green)', label: 'Low', labelColor: 'var(--green)' },
     ],
     drivers: [],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
   GLBX: {
@@ -218,6 +242,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
       { name: 'Floor price',      fillWidth: 90, fillColor: 'var(--red)',   label: 'High', labelColor: 'var(--red)'   },
     ],
     drivers: [],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
   NEXM: {
@@ -239,6 +267,10 @@ export const riskScoreRecords: Record<string, RiskScoreRecord> = {
       { name: 'Floor price',      fillWidth: 50, fillColor: 'var(--amber)', label: 'Med', labelColor: 'var(--amber)' },
     ],
     drivers: [],
+    scoreBasis: 'valid',
+    knownFactors: ['discountRate', 'lookbackDays', 'warrantShares', 'floorPrice', 'resetProvisions'],
+    unknownFactors: [],
+    dataWarnings: [],
   },
 
 };

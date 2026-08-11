@@ -157,6 +157,15 @@ export interface RiskScoreRecord {
   // Score breakdown
   factors: RiskFactor[];
   drivers: RiskDriver[];
+  // Scoring provenance
+  /** Always 'valid': eligibility gate guarantees discountRate is present before scoring. */
+  scoreBasis: 'valid';
+  /** Factor names whose values were extracted from filing text. */
+  knownFactors: string[];
+  /** Factor names whose values were not in the filing and were inferred or defaulted. */
+  unknownFactors: string[];
+  /** Human-readable notes about conservative inferences applied to unknown factors. */
+  dataWarnings: string[];
 }
 
 /**

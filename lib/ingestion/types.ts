@@ -120,7 +120,19 @@ export interface ExtractedFinancingTerms {
   /** Floor conversion price in USD; null means no floor was stated */
   floorPrice?: number | null;
   hasFloorPrice: boolean;
+  /**
+   * true when the floor status was explicitly determined — either a positive floor-price
+   * pattern matched, or an explicit no-floor phrase matched (NO_FLOOR_PATTERNS).
+   * false when neither pattern matched (silence — hasFloorPrice defaulted to false).
+   */
+  hasFloorPriceDetermined: boolean;
   hasResetProvisions: boolean;
+  /**
+   * true when the reset status was explicitly determined — either a reset-provision
+   * pattern matched, or an explicit no-reset phrase matched (NO_RESET_PATTERNS).
+   * false when neither pattern matched (silence — hasResetProvisions defaulted to false).
+   */
+  hasResetProvisionsDetermined: boolean;
   warrantShares?: number;
   warrantExercisePrice?: number;
   /** ISO date or human-readable string */
