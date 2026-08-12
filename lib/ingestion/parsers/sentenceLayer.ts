@@ -555,17 +555,40 @@ const INTEREST_PATTERNS: FieldPattern<number>[] = [
 ];
 
 // ── Discount rate ─────────────────────────────────────────────────────────────
+//
+// OTCIntel invariant: discountRate ALWAYS represents the ECONOMIC discount from
+// market price (i.e. the holder's advantage), regardless of how the filing
+// phrases the conversion formula.
+//
+//   Direct form  ("X% discount to VWAP")   → stored = X / 100
+//   Inverse form ("X% of [reference price]") → stored = (100 − X) / 100
+//
+// Pattern classification:
+//   [0] "X% discount to VWAP/market/closing/lowest" → direct form
+//   [1] "conversion price equal to X% [of…]"        → inverse form
+//   [2] "at X% of the [lowest|average|closing|market]" → inverse form
+//   [3] "discount of X%"                             → direct form
+//   [4] "OID of X%"                                  → direct form (as implied discount)
+
+function invertPct(raw: string): number | undefined {
+  const f = parsePct(raw);
+  return f == null ? undefined : 1 - f;
+}
 
 const DISCOUNT_PATTERNS: FieldPattern<number>[] = [
+  // [0] Direct: "X% discount to VWAP/market/closing/lowest"
   { conf: 0.95, re: /(\d{1,3}(?:\.\d+)?)\s*%\s*discount\s+to\s+(?:the\s+)?(?:VWAP|market|closing|lowest)/i,
     fn: m => parsePct(m[1]) },
+  // [1] Inverse: "conversion price equal to X% [of …]" — X% is the conversion factor, not the discount
   { conf: 0.90, re: /conversion\s+price\s+equal\s+to\s+(\d{1,3}(?:\.\d+)?)\s*%/i,
-    fn: m => parsePct(m[1]) },
+    fn: m => invertPct(m[1]) },
+  // [2] Inverse: "at X% of the [lowest|average|closing|market]" — same semantic
   { conf: 0.85, re: /at\s+(\d{1,3}(?:\.\d+)?)\s*%\s+of\s+(?:the\s+)?(?:lowest|average|closing|market)/i,
-    fn: m => parsePct(m[1]) },
+    fn: m => invertPct(m[1]) },
+  // [3] Direct: "discount of X%"
   { conf: 0.75, re: /discount\s+(?:of\s+)?(\d{1,3}(?:\.\d+)?)\s*%/i,
     fn: m => parsePct(m[1]) },
-  // OID as implied discount
+  // [4] Direct: OID as implied discount
   { conf: 0.70, re: /(?:OID|original\s+issue\s+discount)\s+(?:of\s+)?(\d{1,3}(?:\.\d+)?)\s*%/i,
     fn: m => parsePct(m[1]) },
 ];
