@@ -5,6 +5,7 @@ import { getCompanyRecord, getCompanyFilings, getLatestFinancialSnapshot } from 
 import { scoreFinancingRisk, generateCompanyIntelligence } from '@/lib/ingestion';
 import { applyRunwayUplift } from '@/lib/ingestion/runwayIntegration';
 import { buildLiquidityRiskAssessment } from '@/lib/ingestion/liquidityDisplay';
+import { selectEffectiveFinancing } from '@/lib/ingestion/financingBridge';
 import type { LiquidityRiskAssessment } from '@/lib/ingestion/liquidityDisplay';
 import type { NormalizedFiling, OtcShareStructure, ExtractionConfidence } from '@/lib/ingestion';
 
@@ -241,10 +242,14 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
   const cik         = record?.cik ?? filings[0]?.cik ?? '';
 
   const financingFiling        = selectBestFinancingFiling(filings);
-  const activeFinancing        = financingFiling?.financing;
+  const rawFinancing           = financingFiling?.financing;
+  // Bridge: when 8-K financing lacks discountRate, synthesize from financingReport.convertibleDebt.
+  // CENN is explicitly excluded — see selectEffectiveFinancing for domain justification.
+  const activeFinancing        = selectEffectiveFinancing(symbol, rawFinancing, filings);
   const activeFinancingSource  = financingFiling
     ? `${financingFiling.formType} · ${financingFiling.filedAt}`
-    : undefined;
+    : activeFinancing?.matchedPhrases[0]
+    ?? undefined;
   const structureFiling        = selectBestStructureFiling(filings);
   const activeStructure        = structureFiling?.shareStructure;
   const aggregatedStructure    = aggregateShareStructure(filings);
@@ -785,8 +790,8 @@ export default async function CompanyPage({ params }: { params: Promise<{ ticker
                     Insufficient Data
                   </div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.6, maxWidth: '260px' }}>
-                    A quantitative score requires structured financing terms extracted from an 8-K filing.
-                    Those terms were not found in the available filings for this company.
+                    A quantitative score requires a discount rate extracted from an 8-K filing or a qualifying
+                    convertible note in a 10-K/10-Q. Neither was found for this company.
                   </div>
                 </div>
               </div>

@@ -15,6 +15,9 @@ export { createFilingFetcher } from './fetcher';
 // Risk scorer — derives RiskScoreRecord from parsed financing terms
 export { scoreFinancingRisk } from './scoring';
 
+// Financing bridge — synthesizes ExtractedFinancingTerms from financingReport
+export { bridgeFinancingFromReport, selectEffectiveFinancing } from './financingBridge';
+
 // Company intelligence generator
 export { generateCompanyIntelligence } from './intelligence/companyIntelligence';
 
