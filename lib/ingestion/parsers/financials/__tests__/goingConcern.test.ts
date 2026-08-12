@@ -376,3 +376,201 @@ describe('detectGoingConcern — conditions-and-events disclosure', () => {
     expect(result.confidence).toBe('high');
   });
 });
+
+// ─── 15. Negation / resolution suppression ───────────────────────────────────
+
+describe('detectGoingConcern — negation: LQMT exact wording', () => {
+  it('does not flag the exact LQMT sentence: "no substantial doubt about ability to continue"', () => {
+    const text =
+      "Accordingly, we have concluded that there is no substantial doubt about the Company's ability to continue as a going concern.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(false);
+  });
+});
+
+describe('detectGoingConcern — negation: "no substantial doubt" variant', () => {
+  it('does not flag "there is no substantial doubt about our ability to continue"', () => {
+    const text =
+      'As of the balance sheet date, there is no substantial doubt about our ability to continue as a going concern.';
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(false);
+  });
+});
+
+describe('detectGoingConcern — negation: "concluded/determined that there is no substantial doubt"', () => {
+  it('does not flag "we have concluded that there is no substantial doubt"', () => {
+    const text =
+      "Based on the foregoing, we have concluded that there is no substantial doubt about the Company's ability to continue as a going concern.";
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+
+  it('does not flag "management determined that there is no substantial doubt"', () => {
+    const text =
+      "Management determined that there is no substantial doubt about the entity's ability to continue as a going concern for twelve months from the reporting date.";
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+});
+
+describe('detectGoingConcern — negation: "no longer raises substantial doubt"', () => {
+  it('does not flag when management states plans no longer raise substantial doubt', () => {
+    const text =
+      "Management has assessed its plans and has determined that those conditions and events no longer raise substantial doubt about the entity's ability to continue as a going concern.";
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+});
+
+describe('detectGoingConcern — negation: doubt has been alleviated/resolved/eliminated', () => {
+  it('does not flag "have alleviated the substantial doubt"', () => {
+    const text =
+      "Management believes the plans described above have alleviated the substantial doubt about the Company's ability to continue as a going concern.";
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+
+  it('does not flag "the substantial doubt has been resolved"', () => {
+    const text =
+      "The substantial doubt has been resolved through the completion of a $15 million equity offering and the Company's return to positive operating cash flow.";
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+
+  it('does not flag "the substantial doubt was eliminated"', () => {
+    const text =
+      'As a result of the subsequent financing events, the substantial doubt was eliminated prior to issuance of these financial statements.';
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+});
+
+describe('detectGoingConcern — negation: "no conditions or events that raise substantial doubt"', () => {
+  it('does not flag "no conditions or events that raise substantial doubt"', () => {
+    const text =
+      "Management has evaluated relevant conditions and events and has determined that there are no conditions or events that raise substantial doubt about the entity's ability to continue as a going concern.";
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+});
+
+// ─── 16. Conservative "mitigated" — true positives not suppressed ─────────────
+
+describe('detectGoingConcern — conservative mitigated: plans to mitigate → true', () => {
+  it('does not suppress "plans intended to mitigate the substantial doubt" (in-progress intention)', () => {
+    const text =
+      "Management's plans are intended to mitigate the substantial doubt about the Company's ability to continue as a going concern through equity raises and cost reductions.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+  });
+
+  it('does not suppress "plans to mitigate substantial doubt" (existing Tier-1 pattern)', () => {
+    const text =
+      "Management has implemented plans to mitigate the substantial doubt about our ability to continue as a going concern by securing a $5 million revolving credit facility.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.confidence).toBe('high');
+  });
+});
+
+// ─── 17. True-positive regression guards ─────────────────────────────────────
+
+describe('detectGoingConcern — true-positive regressions after negation fix', () => {
+  it('still flags "raises substantial doubt about ability to continue as a going concern"', () => {
+    const text =
+      "These conditions raise substantial doubt about the Company's ability to continue as a going concern.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.confidence).toBe('high');
+  });
+
+  it('still flags "substantial doubt exists about" variant', () => {
+    const text =
+      'As of the balance sheet date, substantial doubt exists about whether the entity can continue as a going concern through the next fiscal year.';
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.confidence).toBe('high');
+  });
+
+  it('still flags "conditions and events that raise substantial doubt"', () => {
+    const text =
+      "Management identified conditions and events that raise substantial doubt about the Company's ability to continue as a going concern.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.confidence).toBe('high');
+  });
+
+  it('boilerplate + genuine disclosure in same document: still flags true', () => {
+    const boilerplate =
+      'ASU No. 2014-15 requires management to evaluate whether conditions and events that raise substantial doubt about a company\'s ability to continue as a going concern exist.';
+    const genuine =
+      'These recurring losses raise substantial doubt about the Company\'s ability to continue as a going concern.';
+    const result = detectGoingConcern(`${boilerplate} ${genuine}`);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.confidence).toBe('high');
+    expect(result.matchedSentence!).toContain('recurring losses');
+  });
+});
+
+// ─── 18. HTML pre-processing ─────────────────────────────────────────────────
+
+describe('detectGoingConcern — HTML: paragraph boundary does not bleed into matchedSentence', () => {
+  it('matchedSentence contains no HTML tags and no text from subsequent paragraphs', () => {
+    const html =
+      '<p>These factors raise substantial doubt about the Company\'s ability to continue as a going concern.</p>' +
+      '<p>The Company generated revenue of $2.1 million in the period ended March 31, 2026.</p>';
+    const result = detectGoingConcern(html);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.matchedSentence).toBeDefined();
+    expect(result.matchedSentence!).not.toContain('</p>');
+    expect(result.matchedSentence!).not.toContain('<p>');
+    expect(result.matchedSentence!).not.toContain('revenue');
+    expect(result.matchedSentence!).toContain('substantial doubt');
+  });
+});
+
+describe('detectGoingConcern — HTML: &#8217; decoded to apostrophe in matchedSentence', () => {
+  it('decodes &#8217; so matchedSentence contains a readable apostrophe', () => {
+    const text =
+      "These factors raise substantial doubt about the Company&#8217;s ability to continue as a going concern.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.matchedSentence!).not.toContain('&#8217;');
+    expect(result.matchedSentence!).toContain("Company's");
+  });
+});
+
+describe('detectGoingConcern — HTML: &#160; (non-breaking space) treated as whitespace', () => {
+  it('detects the phrase even when &#160; appears between words', () => {
+    const text =
+      "These conditions raise substantial&#160;doubt about the Company&#8217;s ability to continue as a going concern.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.matchedSentence!).not.toContain('&#160;');
+    expect(result.matchedSentence!).not.toContain('&#8217;');
+  });
+});
+
+// ─── 19. Plain-text input unchanged ──────────────────────────────────────────
+
+describe('detectGoingConcern — plain-text input produces identical results after HTML step', () => {
+  it('plain-text high-confidence sentence still returns true/high with no mutation', () => {
+    const text =
+      "These conditions raise substantial doubt about the Company's ability to continue as a going concern.";
+    const result = detectGoingConcern(text);
+
+    expect(result.goingConcernFlag).toBe(true);
+    expect(result.confidence).toBe('high');
+    expect(result.matchedSentence).toBe(text);
+  });
+
+  it('plain-text no-GC document still returns false with no crash', () => {
+    const text =
+      'The Company recognized revenue of $12.3 million for the year ended December 31, 2025, compared to $9.8 million in 2024.';
+    expect(detectGoingConcern(text).goingConcernFlag).toBe(false);
+  });
+});

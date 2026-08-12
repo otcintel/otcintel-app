@@ -17,6 +17,8 @@
  *   Sentences that reference accounting/auditing standards (ASU 2014-15,
  *   ASC 205-40, AS 2415) or contain the standard's definition language are
  *   discarded before scoring. Table-of-contents entries are also discarded.
+ *   Sentences that explicitly negate or resolve the substantial doubt are
+ *   discarded via NEGATION_PATTERNS before tier scoring.
  *
  * Domain rule (from Phase 7 architecture):
  *   Liquidity, losses, or negative cash flow alone do NOT trigger detection.
@@ -64,7 +66,7 @@ const TIERS: Tier[] = [
       /substantial\s+doubt\s+(?:exists?|remains?|has\s+arisen?)\s+(?:about|regarding|as\s+to)/i,
       // "conditions [and/or] events that raise substantial doubt" — requires "going concern" in same sentence
       /conditions?\s+(?:and\s+|or\s+)?events?\s+that\s+raise\s+substantial\s+doubt/i,
-      // "plans to alleviate/mitigate the substantial doubt" — genuine management response
+      // "plans to alleviate/mitigate/address the substantial doubt" — genuine management response
       /plans?\s+to\s+(?:alleviate|mitigate|address)\s+(?:the\s+)?substantial\s+doubt/i,
       // "alleviate the substantial doubt about our ability to continue as a going concern"
       /alleviate\s+(?:the\s+)?substantial\s+doubt/i,
@@ -96,8 +98,9 @@ const TIERS: Tier[] = [
 
 /**
  * Sentences matching any of these markers are discarded before scoring.
- * These identify accounting/auditing standard references and table-of-contents
- * entries — not genuine company disclosures.
+ * Covers:
+ *   - Accounting/auditing standard references (ASU 2014-15, ASC 205-40, AS 2415)
+ *   - Table-of-contents entries
  */
 const BOILERPLATE_MARKERS: RegExp[] = [
   // ASU 2014-15 — FASB update that codified going-concern evaluation requirements
@@ -115,6 +118,32 @@ const BOILERPLATE_MARKERS: RegExp[] = [
   /within\s+one\s+year\s+after\s+the\s+date\s+that\s+the\s+financial\s+statements\s+are\s+(?:issued|available)/i,
 ];
 
+/**
+ * Sentences matching any of these patterns assert that the going-concern
+ * doubt does NOT exist or has been fully resolved. They must be discarded
+ * before tier scoring to prevent false positives.
+ *
+ * Conservative "mitigated" rule: only suppress when the sentence states the
+ * doubt itself has been mitigated (past-tense completion), NOT when describing
+ * management plans intended to mitigate it (future/in-progress intention).
+ */
+const NEGATION_PATTERNS: RegExp[] = [
+  // "no substantial doubt" — the most direct negation
+  /\bno\s+substantial\s+doubt\b/i,
+  // "no longer raises/has/creates substantial doubt"
+  /\bno\s+longer\s+(?:raises?|has|have|creates?|constitutes?)\s+(?:a\s+)?substantial\s+doubt\b/i,
+  // "have/has/had alleviated/resolved/eliminated the substantial doubt" (completed)
+  /(?:have|has|had)\s+(?:been\s+)?(?:alleviated|resolved|eliminated)\s+(?:the\s+)?(?:substantial\s+)?doubt\b/i,
+  // "the substantial doubt has been/was alleviated/resolved/eliminated/mitigated" (passive)
+  /(?:the\s+)?(?:substantial\s+)?doubt\s+(?:has\s+been|was|were)\s+(?:alleviated|resolved|eliminated|mitigated)\b/i,
+  // "have/has mitigated the substantial doubt" (past completion — conservative)
+  /(?:have|has|had)\s+(?:been\s+)?mitigated\s+(?:the\s+)?(?:substantial\s+)?doubt\b/i,
+  // "concluded/determined that there is no [substantial] doubt"
+  /\b(?:concluded|determined)\s+that\s+there\s+(?:is|was|are|were)\s+no\s+(?:substantial\s+)?doubt\b/i,
+  // "no conditions [or/and] events [that/which] raise substantial doubt"
+  /\bno\s+(?:conditions?|events?|factors?)\b(?:\s+(?:or|and)\s+(?:conditions?|events?|factors?)\b)?\s+(?:(?:that|which)\s+)?raise[sd]?\s+substantial\s+doubt\b/i,
+];
+
 /** Pattern identifying table-of-contents / index entries (dotleaders + page ref). */
 const TOC_RE = /(?:\.{3,}|\s{3,})\s*(?:[A-Z]?[-–]?\d+|F[-–]\d+)\s*$/;
 
@@ -129,25 +158,75 @@ function isTocEntry(sentence: string): boolean {
   return sentence.length < 150 && TOC_RE.test(sentence);
 }
 
+function isNegated(sentence: string): boolean {
+  return NEGATION_PATTERNS.some(p => p.test(sentence));
+}
+
 function shouldDiscard(sentence: string): boolean {
   return (
     sentence.length < MIN_SENTENCE_LENGTH ||
     isBoilerplate(sentence) ||
-    isTocEntry(sentence)
+    isTocEntry(sentence) ||
+    isNegated(sentence)
   );
 }
 
 // ─── Text pre-processing ──────────────────────────────────────────────────────
 
 /**
+ * Strip HTML markup from filing text before normalization.
+ *
+ * Strategy:
+ *   1. Block closing tags → space. The period already present at the end of
+ *      the preceding sentence provides the sentence boundary; adding another
+ *      '.' would create spurious double-periods.
+ *   2. <br> → space.
+ *   3. Decode named HTML entities common in SEC filings (apostrophe, dashes,
+ *      non-breaking space, ampersand). Explicit before generic cleanup.
+ *   4. All remaining tags → space.
+ *   5. Remaining numeric entities (&#NNN;) → space so they never appear in
+ *      matchedSentence.
+ *   6. Remaining named entities → space.
+ *
+ * Safe for plain-text input: every replacement is a no-op when no `<`, `>`,
+ * or `&` characters are present.
+ */
+function stripHtml(text: string): string {
+  return text
+    // Block closing tags → space (paragraph/section boundaries)
+    .replace(/<\/(?:p|div|li|tr|td|th|h[1-6]|blockquote|pre|section|article)\s*>/gi, ' ')
+    // Line break → space
+    .replace(/<br\s*\/?>/gi, ' ')
+    // Named entities used frequently in SEC EDGAR filings
+    .replace(/&amp;/gi,  '&')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#160;/g,  ' ')   // non-breaking space
+    .replace(/&#8217;/g, "'")   // right single quotation mark / apostrophe
+    .replace(/&#8216;/g, "'")   // left single quotation mark
+    .replace(/&#8220;/g, '"')   // left double quotation mark
+    .replace(/&#8221;/g, '"')   // right double quotation mark
+    .replace(/&#8211;/g, '–') // en dash
+    .replace(/&#8212;/g, '—') // em dash
+    .replace(/&#8230;/g, '…') // horizontal ellipsis
+    // All remaining tags → space (catches opening tags, attributes, etc.)
+    .replace(/<[^>]+>/g, ' ')
+    // Remaining numeric entities → space
+    .replace(/&#\d+;/g, ' ')
+    // Remaining named entities (2–8 char names) → space
+    .replace(/&[a-z]{2,8};/gi, ' ');
+}
+
+/**
  * Normalize filing text for matching:
- *   - Collapse all whitespace (newlines, tabs, multi-spaces) to a single space.
- *   - Trim leading/trailing whitespace.
+ *   1. Strip HTML markup and decode entities (handles raw SEC EDGAR HTML).
+ *   2. Collapse all whitespace (newlines, tabs, multi-spaces) to a single space.
+ *   3. Trim leading/trailing whitespace.
  *
  * Preserves sentence-ending periods so sentence splitting still works.
+ * Safe for plain-text input — stripHtml is a no-op when no HTML is present.
  */
 function normalizeText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
+  return stripHtml(text).replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -179,8 +258,8 @@ const FALSE_RESULT: GoingConcernResult = {
 /**
  * Detect going-concern disclosures in SEC filing text.
  *
- * @param filingText - Raw text of a 10-K, 10-K/A, 10-Q, or 10-Q/A (may include
- *                    HTML artifacts — whitespace normalization handles most cases).
+ * @param filingText - Raw text of a 10-K, 10-K/A, 10-Q, or 10-Q/A. May include
+ *                    HTML markup — stripHtml() handles it before sentence detection.
  * @returns GoingConcernResult with flag, matched sentence/phrase, and confidence.
  */
 export function detectGoingConcern(filingText: string): GoingConcernResult {
