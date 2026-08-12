@@ -78,13 +78,48 @@ const DISCOUNT_PATTERNS: RegExp[] = [
 /** Pattern indices in DISCOUNT_PATTERNS that represent inverse form ("X% of reference"). */
 const INVERSE_DISCOUNT_PATTERN_INDICES = new Set([2, 3]);
 
-/** Principal / face value patterns */
+/**
+ * Unit-suffix multipliers for principal amount patterns.
+ * Applied when the number captured by a PRINCIPAL_PATTERNS match is followed
+ * by a written-out or abbreviated unit word ("million", "M", etc.).
+ * When no suffix is present the multiplier defaults to 1 (full dollar amount).
+ *
+ * Compact single-letter suffixes (M/B/K) are only treated as units when followed
+ * by a word boundary (\b) — this prevents "M" in "maturity" or "mortgage" from
+ * being mistaken for "million".
+ */
+const PRINCIPAL_UNIT_MULTIPLIERS: Readonly<Record<string, number>> = {
+  billion:  1e9,
+  b:        1e9,
+  million:  1e6,
+  m:        1e6,
+  thousand: 1e3,
+  k:        1e3,
+};
+
+/**
+ * Principal / face value patterns.
+ *
+ * Each pattern has two capture groups:
+ *   [1] — the numeric string (may contain commas; e.g. "3,850,000" or "3.85")
+ *   [2] — optional unit suffix ("million", "M", "billion", "thousand", "K", etc.)
+ *
+ * When [2] is present, the extracted number is multiplied by the corresponding
+ * entry in PRINCIPAL_UNIT_MULTIPLIERS, normalizing all amounts to absolute dollars:
+ *   "$3.85 million"  → 3.85 × 1e6  = 3,850,000
+ *   "$3,850,000"     → 3,850,000 × 1 = 3,850,000
+ */
 const PRINCIPAL_PATTERNS: RegExp[] = [
-  /aggregate\s+principal\s+(?:amount\s+)?of\s+\$([0-9,]+(?:\.[0-9]+)?)/i,
-  /principal\s+(?:amount|sum|balance)\s+of\s+\$([0-9,]+(?:\.[0-9]+)?)/i,
-  /principal\s+(?:amount\s+of\s+)?\$([0-9,]+(?:\.[0-9]+)?)/i,
-  /\$([0-9,]+(?:\.[0-9]+)?)\s+(?:aggregate\s+)?(?:principal|face\s+value)/i,
-  /(?:note|notes?)\s+in\s+(?:the\s+)?(?:aggregate\s+)?(?:principal\s+)?(?:amount\s+of\s+)?\$([0-9,]+)/i,
+  // [0] "aggregate principal amount of $3.85 million" / "...of $3,850,000"
+  /aggregate\s+principal\s+(?:amount\s+)?of\s+\$([0-9,]+(?:\.[0-9]+)?)(?:\s*(billion|million|thousand|[MBK]\b))?/i,
+  // [1] "principal amount of $1.1 million" / "principal balance of $500,000"
+  /principal\s+(?:amount|sum|balance)\s+of\s+\$([0-9,]+(?:\.[0-9]+)?)(?:\s*(billion|million|thousand|[MBK]\b))?/i,
+  // [2] "principal $3.85M" / "principal amount $3,850,000"
+  /principal\s+(?:amount\s+of\s+)?\$([0-9,]+(?:\.[0-9]+)?)(?:\s*(billion|million|thousand|[MBK]\b))?/i,
+  // [3] "$3.85 million principal" / "$3,850,000 aggregate principal"
+  /\$([0-9,]+(?:\.[0-9]+)?)(?:\s*(billion|million|thousand|[MBK]\b))?\s+(?:aggregate\s+)?(?:principal|face\s+value)/i,
+  // [4] "note in the aggregate principal amount of $2 million" / "...of $260,000"
+  /(?:note|notes?)\s+in\s+(?:the\s+)?(?:aggregate\s+)?(?:principal\s+)?(?:amount\s+of\s+)?\$([0-9,]+(?:\.[0-9]+)?)(?:\s*(billion|million|thousand|[MBK]\b))?/i,
 ];
 
 /** VWAP lookback window patterns */
@@ -206,7 +241,9 @@ export function parseFinancingTerms(text: string): ExtractedFinancingTerms | und
   let principalAmount: number | undefined;
   const principalMatch = firstMatch(text, PRINCIPAL_PATTERNS);
   if (principalMatch) {
-    principalAmount = parseNumber(principalMatch[1]);
+    const unitKey  = (principalMatch[2] ?? '').toLowerCase().trim();
+    const unitMult = PRINCIPAL_UNIT_MULTIPLIERS[unitKey] ?? 1;
+    principalAmount = parseNumber(principalMatch[1]) * unitMult;
     matchedPhrases.push(principalMatch[0].trim());
     confidencePoints += 2;
   }

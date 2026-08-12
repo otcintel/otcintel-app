@@ -304,6 +304,38 @@ describe('scoreFinancingRisk — eligibility gate: mandatory discount', () => {
   });
 });
 
+// ─── Banner message: principal amount formatting ──────────────────────────────
+
+describe('scoreFinancingRisk — bannerMessage: principalAmount unit normalization', () => {
+  it('principalAmount=3_850_000 → banner contains "$3.9M" not "$0M"', () => {
+    // Regression for MFON: before the parser fix, "$3.85 million" was stored as 3.85.
+    // scoring.ts divides principalAmount by 1e6 to format the banner:
+    //   3.85 / 1e6       → 0.000... → "$0M"   (old, broken)
+    //   3_850_000 / 1e6  → 3.85     → "$3.9M"  (correct, post-fix)
+    const result = scoreFinancingRisk('MFON', financing({
+      financingType:      'convertible_note',
+      discountRate:       0.10,
+      principalAmount:    3_850_000,
+      hasResetProvisions: true,
+      hasFloorPrice:      false,
+    }));
+    expect(result).toBeDefined();
+    expect(result!.bannerMessage).toContain('$3.9M');
+    expect(result!.bannerMessage).not.toContain('$0M');
+  });
+
+  it('no principalAmount → banner omits the principal string entirely', () => {
+    const result = scoreFinancingRisk('MFON', financing({
+      financingType: 'convertible_note',
+      discountRate:  0.10,
+    }));
+    expect(result).toBeDefined();
+    // principalStr is empty string when principalAmount is undefined
+    expect(result!.bannerMessage).toContain('convertible note');
+    expect(result!.bannerMessage).not.toMatch(/\$[\d.]+M /);
+  });
+});
+
 // ─── Scoring provenance ───────────────────────────────────────────────────────
 
 describe('scoreFinancingRisk — scoreBasis', () => {

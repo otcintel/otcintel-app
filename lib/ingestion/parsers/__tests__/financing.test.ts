@@ -192,6 +192,143 @@ describe('parseFinancingTerms — discount rate: inverse form, pattern 3 ("conve
   });
 });
 
+// ─── Principal amount: unit-suffix normalization ──────────────────────────────
+
+describe('parseFinancingTerms — principalAmount: written-out unit suffixes', () => {
+  // MFON regressions — the three affected 8-K filings
+  it('MFON 2025-08-05: "aggregate principal amount of $3.85 million" → 3_850_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext(
+        'The Company entered into a convertible promissory note in the aggregate principal ' +
+        'amount of $3.85 million, convertible at 90% of the volume-weighted average price.',
+      ),
+    );
+    expect(result?.principalAmount).toBe(3_850_000);
+  });
+
+  it('MFON 2025-08-07: "aggregate principal amount of $3.35 million" → 3_350_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('aggregate principal amount of $3.35 million, subject to full ratchet adjustment.'),
+    );
+    expect(result?.principalAmount).toBe(3_350_000);
+  });
+
+  it('MFON 2025-03-18: "aggregate principal amount of $2.0 million" → 2_000_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('The aggregate principal amount of $2.0 million matures on December 30, 2027.'),
+    );
+    expect(result?.principalAmount).toBe(2_000_000);
+  });
+
+  // CANN regression
+  it('CANN 2025-08-22: "principal amount of $6.749 million" → 6_749_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $6.749 million matures on March 15, 2026.'),
+    );
+    expect(result?.principalAmount).toBe(6_749_000);
+  });
+
+  // LIQT regression
+  it('LIQT 2026-05-26: "aggregate principal amount of $1.1 million" → 1_100_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('aggregate principal amount of $1.1 million.'),
+    );
+    expect(result?.principalAmount).toBe(1_100_000);
+  });
+
+  // Integer million
+  it('"aggregate principal of $2 million" → 2_000_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('aggregate principal of $2 million due and payable 2027.'),
+    );
+    expect(result?.principalAmount).toBe(2_000_000);
+  });
+
+  // Thousand suffix
+  it('"principal amount of $500 thousand" → 500_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $500 thousand convertible promissory note.'),
+    );
+    expect(result?.principalAmount).toBe(500_000);
+  });
+
+  // Billion suffix
+  it('"aggregate principal amount of $1.2 billion" → 1_200_000_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('aggregate principal amount of $1.2 billion senior convertible note.'),
+    );
+    expect(result?.principalAmount).toBe(1_200_000_000);
+  });
+});
+
+describe('parseFinancingTerms — principalAmount: compact M/B/K suffixes', () => {
+  it('"$3.85M" → 3_850_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('aggregate principal amount of $3.85M convertible promissory note.'),
+    );
+    expect(result?.principalAmount).toBe(3_850_000);
+  });
+
+  it('"$1.1M" → 1_100_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $1.1M convertible note.'),
+    );
+    expect(result?.principalAmount).toBe(1_100_000);
+  });
+
+  it('"$500K" → 500_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $500K convertible note.'),
+    );
+    expect(result?.principalAmount).toBe(500_000);
+  });
+
+  it('"$1.5B" → 1_500_000_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('aggregate principal amount of $1.5B senior convertible note.'),
+    );
+    expect(result?.principalAmount).toBe(1_500_000_000);
+  });
+
+  // Compact suffix must not be confused with the first letter of an adjacent word
+  it('"$500,000 maturity" — M in maturity does NOT multiply by 1e6', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $500,000 maturity date December 31, 2026.'),
+    );
+    expect(result?.principalAmount).toBe(500_000);
+  });
+});
+
+describe('parseFinancingTerms — principalAmount: comma-formatted full amounts (regression)', () => {
+  it('"aggregate principal amount of $3,850,000" → 3_850_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('aggregate principal amount of $3,850,000 convertible promissory note.'),
+    );
+    expect(result?.principalAmount).toBe(3_850_000);
+  });
+
+  it('"principal amount of $500,000" → 500_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $500,000 convertible note.'),
+    );
+    expect(result?.principalAmount).toBe(500_000);
+  });
+
+  it('"principal amount of $260,000" → 260_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $260,000 convertible promissory note.'),
+    );
+    expect(result?.principalAmount).toBe(260_000);
+  });
+
+  it('"principal amount of $1,250,000" → 1_250_000', () => {
+    const result = parseFinancingTerms(
+      withNoteContext('principal amount of $1,250,000 senior convertible note.'),
+    );
+    expect(result?.principalAmount).toBe(1_250_000);
+  });
+});
+
 // ─── Edge cases ───────────────────────────────────────────────────────────────
 
 describe('parseFinancingTerms — discount rate: edge cases', () => {
