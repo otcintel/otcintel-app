@@ -92,9 +92,11 @@ function buildDrivers(
       : financing.discountRate >= 0.15
         ? `is at or above the 15% elevated risk threshold`
         : `is below the 15% elevated risk threshold`;
-    const floor = !financing.hasFloorPrice
-      ? ' No floor price means conversion shares are uncapped as stock price declines.'
-      : ` The floor price of $${financing.floorPrice} bounds the downside.`;
+    const floor = financing.hasFloorPrice
+      ? ` The floor price of $${financing.floorPrice} bounds the downside.`
+      : financing.hasFloorPriceDetermined
+        ? ' No floor price means conversion shares are uncapped as stock price declines.'
+        : ' Floor price status not determined from filing text.';
     drivers.push({
       dotColor: color,
       text: `<strong>${pct}% discount to ${lookbackStr}VWAP</strong> ${threshold}.${floor}`,
@@ -107,10 +109,15 @@ function buildDrivers(
       dotColor: 'var(--red)',
       text: '<strong>Reset provisions present.</strong> Anti-dilution clauses allow the conversion price to step down if the stock trades below prior conversion levels, compounding dilution over time.',
     });
-  } else {
+  } else if (financing.hasResetProvisionsDetermined) {
     drivers.push({
       dotColor: 'var(--green)',
       text: '<strong>No reset provisions.</strong> The absence of anti-dilution reset clauses fixes the conversion price, capping share issuance at current terms regardless of future price movement.',
+    });
+  } else {
+    drivers.push({
+      dotColor: 'var(--amber)',
+      text: '<strong>Reset provisions status not determined.</strong> The filing text did not include explicit reset-provision language — scored conservatively as absent. Provisions may exist.',
     });
   }
 
@@ -141,10 +148,17 @@ function buildDrivers(
 
   // Floor price driver
   if (!financing.hasFloorPrice) {
-    drivers.push({
-      dotColor: 'var(--red)',
-      text: '<strong>No floor price stated.</strong> Absent a contractual minimum, share issuance from the note escalates without limit as stock price declines.',
-    });
+    if (financing.hasFloorPriceDetermined) {
+      drivers.push({
+        dotColor: 'var(--red)',
+        text: '<strong>No floor price stated.</strong> Absent a contractual minimum, share issuance from the note escalates without limit as stock price declines.',
+      });
+    } else {
+      drivers.push({
+        dotColor: 'var(--amber)',
+        text: '<strong>Floor price status not determined.</strong> The filing text did not include explicit floor-price language — scored conservatively as absent. A floor may exist.',
+      });
+    }
   } else if (financing.floorPrice) {
     drivers.push({
       dotColor: 'var(--green)',

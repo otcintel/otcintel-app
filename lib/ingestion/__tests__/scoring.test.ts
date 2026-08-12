@@ -514,6 +514,145 @@ describe('scoreFinancingRisk — knownFactors / unknownFactors', () => {
   });
 });
 
+// ─── Bridge driver wording: undetermined floor / reset ────────────────────────
+
+describe('scoreFinancingRisk — driver text: floor/reset undetermined (bridge path)', () => {
+  it('undetermined floor → driver does NOT say "No floor price stated"', () => {
+    const result = scoreFinancingRisk('AITX', financing({
+      discountRate: 0.35,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: false,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true,
+    }));
+    const allText = result!.drivers.map(d => d.text).join(' ');
+    expect(allText).not.toContain('No floor price stated');
+    expect(allText).toContain('not determined');
+  });
+
+  it('undetermined floor driver uses amber dot color', () => {
+    const result = scoreFinancingRisk('AITX', financing({
+      discountRate: 0.35,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: false,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true,
+    }));
+    // find the standalone floor driver (not the inline clause in the discount driver)
+    const floorDriver = result!.drivers.find(d => d.text.includes('A floor may exist'));
+    expect(floorDriver).toBeDefined();
+    expect(floorDriver!.dotColor).toBe('var(--amber)');
+  });
+
+  it('undetermined reset → driver does NOT say "No reset provisions"', () => {
+    const result = scoreFinancingRisk('AITX', financing({
+      discountRate: 0.35,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: false,
+    }));
+    const allText = result!.drivers.map(d => d.text).join(' ');
+    expect(allText).not.toContain('No reset provisions');
+    expect(allText).toContain('not determined');
+  });
+
+  it('undetermined reset driver uses amber dot color', () => {
+    const result = scoreFinancingRisk('AITX', financing({
+      discountRate: 0.35,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: false,
+    }));
+    const resetDriver = result!.drivers.find(d => d.text.includes('Reset provisions status not determined'));
+    expect(resetDriver).toBeDefined();
+    expect(resetDriver!.dotColor).toBe('var(--amber)');
+  });
+
+  it('undetermined floor → discount driver inline does NOT say "No floor price means"', () => {
+    const result = scoreFinancingRisk('AITX', financing({
+      discountRate: 0.35,
+      lookbackDays: 10,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: false,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true,
+    }));
+    const discountDriver = result!.drivers[0];
+    expect(discountDriver.text).not.toContain('No floor price means');
+    expect(discountDriver.text).toContain('not determined');
+  });
+
+  // Native 8-K preserved behavior (determined=true)
+  it('determined floor=false → still says "No floor price stated" (native 8-K)', () => {
+    const result = scoreFinancingRisk('VNRX', financing({
+      discountRate: 0.10,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true,
+    }));
+    const allText = result!.drivers.map(d => d.text).join(' ');
+    expect(allText).toContain('No floor price stated');
+    expect(allText).not.toContain('Floor price status not determined');
+  });
+
+  it('determined reset=false → still says "No reset provisions" (native 8-K)', () => {
+    const result = scoreFinancingRisk('VNRX', financing({
+      discountRate: 0.10,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true,
+    }));
+    const allText = result!.drivers.map(d => d.text).join(' ');
+    expect(allText).toContain('No reset provisions');
+    expect(allText).not.toContain('Reset provisions status not determined');
+  });
+
+  it('determined floor=true → still says "Floor price of $X stated" (native 8-K)', () => {
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.10,
+      hasFloorPrice: true,
+      floorPrice: 0.05,
+      hasFloorPriceDetermined: true,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: true,
+    }));
+    const allText = result!.drivers.map(d => d.text).join(' ');
+    expect(allText).toContain('Floor price of $0.05 stated');
+  });
+
+  it('determined reset=true → still says "Reset provisions present" (native 8-K)', () => {
+    const result = scoreFinancingRisk('TEST', financing({
+      discountRate: 0.10,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: true,
+      hasResetProvisions: true,
+      hasResetProvisionsDetermined: true,
+    }));
+    const allText = result!.drivers.map(d => d.text).join(' ');
+    expect(allText).toContain('Reset provisions present');
+  });
+
+  // AITX bridge config: score must remain 56 / med (no scoring weight changes)
+  it('AITX bridge config: base score = 56, level = med', () => {
+    // dr=0.35 → 95×0.30=28.5 | lb=10 → 72×0.20=14.4 | warrants=0 | reset=18×0.20=3.6 | floor=90×0.10=9.0 = 55.5 → 56
+    const result = scoreFinancingRisk('AITX', financing({
+      discountRate: 0.35,
+      lookbackDays: 10,
+      hasFloorPrice: false,
+      hasFloorPriceDetermined: false,
+      hasResetProvisions: false,
+      hasResetProvisionsDetermined: false,
+    }));
+    expect(result).toBeDefined();
+    expect(result!.score).toBe(56);
+    expect(result!.level).toBe('med');
+  });
+});
+
 // ─── Exact score verification for known inputs ────────────────────────────────
 
 describe('scoreFinancingRisk — exact score for WXYZ mock data', () => {
