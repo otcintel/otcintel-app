@@ -284,11 +284,12 @@ describe('scoreFinancingRisk — eligibility gate: mandatory discount', () => {
     }))).toBeUndefined();
   });
 
-  it('MFON-style: discountRate=0.90 is scoreable in this step (parser/domain validation deferred)', () => {
-    // MFON's stored discountRate=0.90 is suspicious — likely an inverse-form parser failure
-    // that should yield 0.10 ("90% of VWAP" → 10% discount). Parser correction and any
-    // domain-sanity cap are intentionally deferred. The eligibility gate checks presence
-    // only, not plausibility, so MFON still receives a score in this step.
+  it('MFON-style: scorer receives discountRate=0.90 and computes the expected score', () => {
+    // Scorer-level test: the scorer's behaviour with discountRate=0.90 as input.
+    // The parser-level inversion bug (MFON "90% of VWAP" stored as 0.90 instead of 0.10)
+    // has been fixed in financing.ts (PARSER_VERSION 1.0.2). After re-ingestion MFON will
+    // produce discountRate=0.10. This test exercises the scorer independently with a 0.90
+    // input and remains valid as a scorer boundary test.
     const result = scoreFinancingRisk('MFON', financing({
       financingType: 'convertible_note',
       discountRate: 0.90,

@@ -55,17 +55,28 @@ const FINANCING_TYPE_PATTERNS: Array<{ type: FinancingType; patterns: RegExp[] }
  * Discount rate patterns.
  * OTC notes typically express conversion as a % of VWAP (e.g. "78% of VWAP" = 22% discount)
  * or directly as a discount (e.g. "22% discount to VWAP").
+ *
+ * Form classification (determines inversion):
+ *   Direct form  (indices 0, 1): number IS the discount   → discountRate = X / 100
+ *   Inverse form (indices 2, 3): number IS % of reference → discountRate = (100 − X) / 100
+ *
+ * Inversion is determined by which pattern matched, NOT by re-inspecting the match
+ * substring, which was unreliable when the match ended exactly at "of" with no
+ * trailing whitespace (the previous bug that caused "90% of VWAP" → 0.90 instead of 0.10).
  */
 const DISCOUNT_PATTERNS: RegExp[] = [
-  // "22% discount to VWAP" / "22% discount"
+  // [0] Direct — "22% discount to VWAP" / "22% discount"
   /(\d+(?:\.\d+)?)\s*%\s*discount\s*(?:to|from|of)?\s*(?:the\s+)?(?:lowest\s+)?(?:VWAP|market|closing)/i,
-  // "discount of 22%"
+  // [1] Direct — "discount of 22%"
   /discount\s+of\s+(\d+(?:\.\d+)?)\s*%/i,
-  // "78% of the lowest VWAP" → invert: 100 - 78 = 22% discount
+  // [2] Inverse — "78% of the lowest VWAP" → (100 − 78) / 100 = 0.22
   /(\d+(?:\.\d+)?)\s*%\s*of\s*(?:the\s+)?(?:lowest|average|closing|market)/i,
-  // "conversion price equal to 78% of VWAP"
+  // [3] Inverse — "conversion price equal to 78% of VWAP" → (100 − 78) / 100 = 0.22
   /conversion\s+price\s+(?:equal\s+to|of|is)\s+(\d+(?:\.\d+)?)\s*%\s*of/i,
 ];
+
+/** Pattern indices in DISCOUNT_PATTERNS that represent inverse form ("X% of reference"). */
+const INVERSE_DISCOUNT_PATTERN_INDICES = new Set([2, 3]);
 
 /** Principal / face value patterns */
 const PRINCIPAL_PATTERNS: RegExp[] = [
@@ -202,14 +213,19 @@ export function parseFinancingTerms(text: string): ExtractedFinancingTerms | und
 
   // ── Discount rate ──
   let discountRate: number | undefined;
-  const discountMatch = firstMatch(text, DISCOUNT_PATTERNS);
-  if (discountMatch) {
-    const raw = parseFloat(discountMatch[1]);
-    // If the pattern matched "X% of VWAP" (inverse form), compute 1 - X/100
-    const isInverseForm = /\d+\s*%\s*of\s/i.test(discountMatch[0]);
-    discountRate = isInverseForm ? (100 - raw) / 100 : raw / 100;
-    matchedPhrases.push(discountMatch[0].trim());
-    confidencePoints += 2;
+  for (let i = 0; i < DISCOUNT_PATTERNS.length; i++) {
+    const m = text.match(DISCOUNT_PATTERNS[i]);
+    if (m) {
+      const raw = parseFloat(m[1]);
+      // Inversion is determined by which pattern matched, not by re-inspecting the
+      // match substring. Patterns 2 and 3 express "X% of reference" (inverse form);
+      // patterns 0 and 1 express "X% discount" (direct form).
+      const isInverseForm = INVERSE_DISCOUNT_PATTERN_INDICES.has(i);
+      discountRate = isInverseForm ? (100 - raw) / 100 : raw / 100;
+      matchedPhrases.push(m[0].trim());
+      confidencePoints += 2;
+      break;
+    }
   }
 
   // ── Lookback window ──

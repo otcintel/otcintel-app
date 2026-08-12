@@ -9,7 +9,7 @@
 // ─── Parser version ───────────────────────────────────────────────────────────
 
 /** Bump this when extractors change significantly to trigger controlled reprocessing. */
-export const PARSER_VERSION = '1.0.1';
+export const PARSER_VERSION = '1.0.2';
 
 // ─── Company record ───────────────────────────────────────────────────────────
 
