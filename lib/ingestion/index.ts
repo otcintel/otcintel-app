@@ -7,7 +7,7 @@
  */
 
 // Pipeline — primary entry point for running ingestion
-export { ingestTicker, ingestTickers } from './pipeline';
+export { ingestTicker, ingestTickers, reparseStaleFiling } from './pipeline';
 
 // Fetcher factory — for manual fetcher instantiation
 export { createFilingFetcher } from './fetcher';

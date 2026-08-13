@@ -46,8 +46,8 @@ import {
   selectBestFinancingFiling,
   selectBridgeSourceFiling,
 } from '../ingestion/financingBridge';
-import { seedToRecord, applyIngestionResult, getStaleFilings } from './companies';
-import { ingestTicker } from '../ingestion';
+import { seedToRecord, applyIngestionResult, getStaleFilings, PARSEABLE_FORMS } from './companies';
+import { ingestTicker, reparseStaleFiling } from '../ingestion';
 import type { NormalizedFiling, PipelineResult } from '../ingestion/types';
 import { normalizedFilingStore } from '../ingestion/store';
 import { generateCompanyIntelligence } from '../ingestion/intelligence/companyIntelligence';
@@ -379,11 +379,13 @@ async function ingestOneCompany(
     // version. Stale filings (wrong parser version) are re-fetched and re-parsed.
     // opts.forceReparse overrides this entirely.
     let skipAccessions: Set<string>;
+    let staleStoredFilings: NormalizedFiling[] = [];
     if (opts.forceReparse) {
       skipAccessions = new Set<string>();
     } else {
       const storedFilings = await repos.filings.getByTicker(company.ticker);
-      const staleAccessions = new Set(getStaleFilings(storedFilings).map(f => f.accessionNumber));
+      staleStoredFilings = getStaleFilings(storedFilings);
+      const staleAccessions = new Set(staleStoredFilings.map(f => f.accessionNumber));
       const allKnown = await repos.filings.knownAccessions(company.ticker);
       // Remove stale from the skip set so they are re-parsed
       for (const acc of staleAccessions) allKnown.delete(acc);
@@ -403,6 +405,39 @@ async function ingestOneCompany(
       verbose:        opts.verbose ?? false,
       skipAccessions,
     });
+
+    // ── Targeted stale reparse ────────────────────────────────────────────────
+    // The pipeline's discovery scan (EXTENDED_FINANCING_LIMIT = 5) may not
+    // surface every stale filing when newer Tier-1 filings fill the result limit.
+    // For each stale filing the normal pipeline missed, fetch and reparse it
+    // directly so the parserVersion guarantee holds unconditionally.
+    // Non-fatal: a warning is recorded and the company continues on failure.
+    if (staleStoredFilings.length > 0) {
+      const reparsedAccessions = new Set(result.normalized.map(f => f.accessionNumber));
+      for (const staling of staleStoredFilings) {
+        if (reparsedAccessions.has(staling.accessionNumber)) continue;
+        if (!PARSEABLE_FORMS.has(staling.formType)) continue;
+        try {
+          const refreshed = await reparseStaleFiling(staling);
+          result.normalized.push(refreshed);
+          reparsedAccessions.add(staling.accessionNumber);
+          if (opts.verbose) {
+            console.log(
+              `[batch] ${company.ticker}: targeted reparse of ${staling.accessionNumber} (${staling.formType})`,
+            );
+          }
+        } catch (err) {
+          result.errors.push(
+            `stale reparse skipped: ${company.ticker} ${staling.accessionNumber} (${staling.formType}): ${err instanceof Error ? err.message : String(err)}`,
+          );
+          if (opts.verbose) {
+            console.warn(
+              `[batch] ${company.ticker}: stale reparse failed for ${staling.accessionNumber} (${staling.formType}): ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+      }
+    }
 
     if (result.errors.some(e => e.includes('not found in EDGAR'))) {
       throw Object.assign(new Error(result.errors.join('; ')), { stage: 'ticker_resolution' as IngestionStage });

@@ -297,6 +297,42 @@ export async function ingestTicker(
 }
 
 /**
+ * Directly fetch and reparse a single filing by reconstructing its EDGAR archive URL
+ * from the stored NormalizedFiling metadata.
+ *
+ * Called by the batch ingestor for stale filings that were not rediscovered by the
+ * normal pipeline scan (which can be cut off by EXTENDED_FINANCING_LIMIT).  Throws
+ * on any network or parse error so the caller can record a non-fatal warning and
+ * continue ingestion for the company.
+ */
+export async function reparseStaleFiling(staling: NormalizedFiling): Promise<NormalizedFiling> {
+  const fetcher = createFilingFetcher();
+
+  // Reconstruct the EDGAR full-text submission URL from stored accession + CIK.
+  // Pattern: /Archives/edgar/data/{cikStripped}/{accessionNoHyphens}/{accessionNumber}.txt
+  const cidStripped   = staling.cik.replace(/^0+/, '');
+  const accessionPath = staling.accessionNumber.replace(/-/g, '');
+  const fullTextUrl =
+    `https://www.sec.gov/Archives/edgar/data/${cidStripped}/${accessionPath}/${staling.accessionNumber}.txt`;
+
+  const rawFiling: RawFiling = {
+    accessionNumber: staling.accessionNumber,
+    ticker:          staling.ticker,
+    cik:             staling.cik,
+    formType:        staling.formType,
+    filedAt:         staling.filedAt,
+    periodOfReport:  staling.periodOfReport,
+    documentUrl:     staling.documentUrl,
+    fullTextUrl,
+  };
+
+  rawFiling.text = await fetcher.fetchFilingText(rawFiling);
+
+  const parsed = parseRawFiling(rawFiling);
+  return normalizeParsedFiling(parsed, resolveSource(fetcher.mode, fetcher));
+}
+
+/**
  * Run the ingestion pipeline for multiple tickers in sequence.
  * Uses sequential processing to respect EDGAR rate limits.
  *
