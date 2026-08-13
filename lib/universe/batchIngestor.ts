@@ -30,13 +30,22 @@ import {
   getRunsRepo,
   getIntelligenceRepo,
   getFinancialSnapshotsRepo,
+  getReviewItemsRepo,
 } from '../db/repositories';
 import type {
   ICompaniesRepository,
   IFilingsRepository,
   IIntelligenceRepository,
   IFinancialSnapshotsRepository,
+  IReviewItemsRepository,
 } from '../db/types';
+import { inspect } from '../anomaly/detector';
+import type { InspectionContext, SourceFilingContext } from '../anomaly/detector';
+import {
+  selectEffectiveFinancing,
+  selectBestFinancingFiling,
+  selectBridgeSourceFiling,
+} from '../ingestion/financingBridge';
 import { seedToRecord, applyIngestionResult, getStaleFilings } from './companies';
 import { ingestTicker } from '../ingestion';
 import type { NormalizedFiling, PipelineResult } from '../ingestion/types';
@@ -232,6 +241,7 @@ interface IngestionRepos {
   filings: IFilingsRepository;
   intelligence: IIntelligenceRepository;
   financialSnapshots: IFinancialSnapshotsRepository;
+  reviewItems: IReviewItemsRepository;
 }
 
 /** Track which batches are currently running to prevent double-starts */
@@ -252,12 +262,13 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
   // Initialize backend-aware repositories once.
   // On Vercel (PERSISTENCE_BACKEND=postgres) these go to Supabase.
   // Locally (PERSISTENCE_BACKEND=filesystem) these delegate to the JSON store.
-  const [companiesRepo, filingsRepo, runsRepo, intelligenceRepo, snapshotsRepo] = await Promise.all([
+  const [companiesRepo, filingsRepo, runsRepo, intelligenceRepo, snapshotsRepo, reviewItemsRepo] = await Promise.all([
     getCompaniesRepo(),
     getFilingsRepo(),
     getRunsRepo(),
     getIntelligenceRepo(),
     getFinancialSnapshotsRepo(),
+    getReviewItemsRepo(),
   ]);
 
   const run: IngestionRun = {
@@ -289,6 +300,7 @@ export async function runBatchIngestion(opts: BatchIngestionOptions = {}): Promi
     filings:            filingsRepo,
     intelligence:       intelligenceRepo,
     financialSnapshots: snapshotsRepo,
+    reviewItems:        reviewItemsRepo,
   };
 
   try {
@@ -439,6 +451,69 @@ async function ingestOneCompany(
     }
 
     await repos.intelligence.upsert(intelligence);
+
+    // ── Phase 1B: Anomaly detection ──────────────────────────────────────────
+    // Non-fatal: detector or repository errors must not fail company ingestion.
+    try {
+      const bestFilingForFinancing = selectBestFinancingFiling(allFilings);
+      const rawFinancing           = bestFilingForFinancing?.financing;
+      const activeFinancing        = selectEffectiveFinancing(company.ticker, rawFinancing, allFilings);
+      const hasFinancingClassification = allFilings.some(f => f.financing !== undefined);
+
+      // Determine source filing for the active financing terms.
+      let sourceFiling: SourceFilingContext | undefined;
+      if (activeFinancing !== undefined && activeFinancing !== rawFinancing) {
+        // Bridge path: effective financing was synthesized from 10-K/10-Q notes.
+        const bridgeFiling = selectBridgeSourceFiling(allFilings);
+        if (bridgeFiling) {
+          sourceFiling = {
+            accessionNumber:       bridgeFiling.accessionNumber,
+            formType:              bridgeFiling.formType,
+            filedAt:               bridgeFiling.filedAt,
+            parserVersion:         bridgeFiling.parserVersion,
+            isActiveScoringSource: true,
+          };
+        }
+      } else if (bestFilingForFinancing) {
+        // Direct path: financing terms came from the best 8-K/A filing.
+        sourceFiling = {
+          accessionNumber:       bestFilingForFinancing.accessionNumber,
+          formType:              bestFilingForFinancing.formType,
+          filedAt:               bestFilingForFinancing.filedAt,
+          parserVersion:         bestFilingForFinancing.parserVersion,
+          isActiveScoringSource: true,
+        };
+      }
+
+      const ctx: InspectionContext = {
+        ticker:                   company.ticker,
+        cik:                      company.cik,
+        hasFinancingClassification,
+        activeFinancing,
+        sourceFiling,
+        snapshot:                 intelligence.financialSnapshot,
+        riskScore:                undefined,
+        currentParserVersion:     PARSER_VERSION,
+        runId:                    run.runId,
+      };
+
+      const detectedItems = inspect(ctx);
+
+      if (detectedItems.length > 0) {
+        await repos.reviewItems.upsertDetected(detectedItems);
+      }
+      await repos.reviewItems.markResolvedIfAbsent(
+        detectedItems.map(i => i.dedupKey),
+        company.ticker,
+      );
+    } catch (err) {
+      if (opts.verbose) {
+        console.warn(
+          `[batch] ${company.ticker} anomaly detection failed (non-fatal): ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     const endedAt = new Date().toISOString();
 

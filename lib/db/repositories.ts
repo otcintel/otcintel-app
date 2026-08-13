@@ -13,7 +13,7 @@
  * directly (always filesystem) and are migrated in a future phase.
  */
 
-import type { ICompaniesRepository, IFilingsRepository, IRunsRepository, IIntelligenceRepository, IFinancialSnapshotsRepository } from './types';
+import type { ICompaniesRepository, IFilingsRepository, IRunsRepository, IIntelligenceRepository, IFinancialSnapshotsRepository, IReviewItemsRepository } from './types';
 
 const BACKEND = process.env.PERSISTENCE_BACKEND ?? 'filesystem';
 
@@ -23,6 +23,18 @@ let _filings:            IFilingsRepository | null = null;
 let _runs:               IRunsRepository | null = null;
 let _intelligence:       IIntelligenceRepository | null = null;
 let _financialSnapshots: IFinancialSnapshotsRepository | null = null;
+let _reviewItems:        IReviewItemsRepository | null = null;
+
+// Review items are Postgres-only. On the filesystem backend, all writes are
+// silently discarded and reads return empty results so that the batch ingestor
+// runs locally without Supabase credentials.
+const _noOpReviewItemsRepo: IReviewItemsRepository = {
+  async upsertDetected()       { /* filesystem: review items require Postgres */ },
+  async list()                 { return []; },
+  async getByDedupKey()        { return undefined; },
+  async updateStatus()         { /* no-op */ },
+  async markResolvedIfAbsent() { /* no-op */ },
+};
 
 async function loadBackend(): Promise<{
   companies: ICompaniesRepository;
@@ -98,6 +110,17 @@ export async function getFinancialSnapshotsRepo(): Promise<IFinancialSnapshotsRe
   return _financialSnapshots!;
 }
 
+export async function getReviewItemsRepo(): Promise<IReviewItemsRepository> {
+  if (_reviewItems) return _reviewItems;
+  if (BACKEND === 'postgres') {
+    const { postgresReviewItemsDb } = await import('./postgres/reviewItems');
+    _reviewItems = postgresReviewItemsDb;
+  } else {
+    _reviewItems = _noOpReviewItemsRepo;
+  }
+  return _reviewItems;
+}
+
 /** Returns the active backend name — useful for logging. */
 export function getBackendName(): string {
   return BACKEND;
@@ -110,4 +133,5 @@ export function resetRepositories(): void {
   _runs               = null;
   _intelligence       = null;
   _financialSnapshots = null;
+  _reviewItems        = null;
 }

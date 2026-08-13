@@ -29,6 +29,7 @@ import type {
   ReviewItemFilters,
   ReviewStatus,
 } from '../../anomaly/types';
+import type { IReviewItemsRepository } from '../types';
 
 // ─── Row type ─────────────────────────────────────────────────────────────────
 
@@ -281,6 +282,16 @@ export async function updateStatus(
  * @param activeDedupKeys - dedup_keys emitted by the detector in this run
  * @param ticker - when provided, scope to one company; omit for full-universe runs
  */
+// ─── Singleton for repository factory ────────────────────────────────────────
+
+export const postgresReviewItemsDb: IReviewItemsRepository = {
+  upsertDetected,
+  list,
+  getByDedupKey,
+  updateStatus,
+  markResolvedIfAbsent,
+};
+
 export async function markResolvedIfAbsent(
   activeDedupKeys: string[],
   ticker?: string,

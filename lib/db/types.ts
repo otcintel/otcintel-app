@@ -13,6 +13,7 @@
 import type { CompanyRecord, IngestionRun, RunResult } from '../universe/types';
 import type { NormalizedFiling, CompanyIntelligence } from '../ingestion/types';
 import type { FinancialSnapshot } from '../ingestion/parsers/financials/snapshot';
+import type { ReviewItemInput, ReviewItem, ReviewItemFilters, ReviewStatus } from '../anomaly/types';
 
 // ─── Companies ────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,16 @@ export interface IFinancialSnapshotsRepository {
   upsert(snapshot: FinancialSnapshot): Promise<void>;
 }
 
+// ─── Review items ─────────────────────────────────────────────────────────────
+
+export interface IReviewItemsRepository {
+  upsertDetected(items: ReviewItemInput[]): Promise<void>;
+  list(filters?: ReviewItemFilters): Promise<ReviewItem[]>;
+  getByDedupKey(dedupKey: string): Promise<ReviewItem | undefined>;
+  updateStatus(id: string, status: ReviewStatus, resolutionNote?: string): Promise<void>;
+  markResolvedIfAbsent(activeDedupKeys: string[], ticker?: string): Promise<void>;
+}
+
 // ─── Combined ─────────────────────────────────────────────────────────────────
 
 export interface IRepositories {
@@ -128,4 +139,5 @@ export interface IRepositories {
   runs: IRunsRepository;
   intelligence: IIntelligenceRepository;
   financialSnapshots: IFinancialSnapshotsRepository;
+  reviewItems?: IReviewItemsRepository;
 }

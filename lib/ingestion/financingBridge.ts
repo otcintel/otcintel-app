@@ -114,6 +114,43 @@ export function bridgeFinancingFromReport(
   };
 }
 
+// ─── Financing filing selectors ───────────────────────────────────────────────
+
+const CONFIDENCE_RANK: Record<string, number> = { high: 1, medium: 2, low: 3 };
+
+/**
+ * Select the "best" financing filing — the one that contributes rawFinancing
+ * to selectEffectiveFinancing().
+ *
+ * Prefers classified types over 'unknown', then highest confidence, then
+ * most recent filedAt. Mirrors the selection in app/company/[ticker]/page.tsx.
+ *
+ * Exported for Phase 1B anomaly detection context assembly.
+ */
+export function selectBestFinancingFiling(filings: NormalizedFiling[]): NormalizedFiling | undefined {
+  const specific   = filings.filter(f => f.financing && f.financing.financingType !== 'unknown');
+  const candidates = specific.length > 0 ? specific : filings.filter(f => f.financing);
+  if (candidates.length === 0) return undefined;
+  return [...candidates].sort((a, b) => {
+    const ca = CONFIDENCE_RANK[a.financing!.confidence] ?? 9;
+    const cb = CONFIDENCE_RANK[b.financing!.confidence] ?? 9;
+    if (ca !== cb) return ca - cb;
+    return b.filedAt.localeCompare(a.filedAt);
+  })[0];
+}
+
+/**
+ * Select the filing that bridgeFinancingFromReport() would use as its source —
+ * the most recently filed report with at least one qualifying convertible note.
+ *
+ * Exported for Phase 1B anomaly detection context assembly.
+ */
+export function selectBridgeSourceFiling(filings: NormalizedFiling[]): NormalizedFiling | undefined {
+  return filings
+    .filter(f => f.financingReport?.convertibleDebt?.some(isQualifying))
+    .sort((a, b) => b.filedAt.localeCompare(a.filedAt))[0];
+}
+
 /**
  * Select the effective ExtractedFinancingTerms for scoring and display.
  *

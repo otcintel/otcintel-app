@@ -25,6 +25,7 @@ import type {
   IRunsRepository,
   IIntelligenceRepository,
   IFinancialSnapshotsRepository,
+  IReviewItemsRepository,
 } from '@/lib/db/types';
 import type { NormalizedFiling, CompanyIntelligence } from '@/lib/ingestion/types';
 
@@ -36,6 +37,7 @@ vi.mock('@/lib/db/repositories', () => ({
   getRunsRepo:               vi.fn(),
   getIntelligenceRepo:       vi.fn(),
   getFinancialSnapshotsRepo: vi.fn(),
+  getReviewItemsRepo:        vi.fn(),
   resetRepositories:         vi.fn(),
   getBackendName:            vi.fn().mockReturnValue('postgres'),
 }));
@@ -115,6 +117,7 @@ import {
   getRunsRepo,
   getIntelligenceRepo,
   getFinancialSnapshotsRepo,
+  getReviewItemsRepo,
 } from '@/lib/db/repositories';
 import { ingestTicker } from '@/lib/ingestion';
 import { generateCompanyIntelligence } from '@/lib/ingestion/intelligence/companyIntelligence';
@@ -219,6 +222,16 @@ function makeFinancialSnapshotsRepo(): IFinancialSnapshotsRepository {
   };
 }
 
+function makeReviewItemsRepo(): IReviewItemsRepository {
+  return {
+    upsertDetected:       vi.fn().mockResolvedValue(undefined),
+    list:                 vi.fn().mockResolvedValue([]),
+    getByDedupKey:        vi.fn().mockResolvedValue(undefined),
+    updateStatus:         vi.fn().mockResolvedValue(undefined),
+    markResolvedIfAbsent: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 let mockCompaniesRepo: ICompaniesRepository;
@@ -226,6 +239,7 @@ let mockFilingsRepo: IFilingsRepository;
 let mockRunsRepo: IRunsRepository;
 let mockIntelligenceRepo: IIntelligenceRepository;
 let mockFinancialSnapshotsRepo: IFinancialSnapshotsRepository;
+let mockReviewItemsRepo: IReviewItemsRepository;
 
 beforeEach(() => {
   mockCompaniesRepo          = makeCompaniesRepo();
@@ -233,12 +247,14 @@ beforeEach(() => {
   mockRunsRepo               = makeRunsRepo();
   mockIntelligenceRepo       = makeIntelligenceRepo();
   mockFinancialSnapshotsRepo = makeFinancialSnapshotsRepo();
+  mockReviewItemsRepo        = makeReviewItemsRepo();
 
   vi.mocked(getCompaniesRepo).mockResolvedValue(mockCompaniesRepo);
   vi.mocked(getFilingsRepo).mockResolvedValue(mockFilingsRepo);
   vi.mocked(getRunsRepo).mockResolvedValue(mockRunsRepo);
   vi.mocked(getIntelligenceRepo).mockResolvedValue(mockIntelligenceRepo);
   vi.mocked(getFinancialSnapshotsRepo).mockResolvedValue(mockFinancialSnapshotsRepo);
+  vi.mocked(getReviewItemsRepo).mockResolvedValue(mockReviewItemsRepo);
 
   vi.mocked(ingestTicker).mockResolvedValue(MOCK_PIPELINE_RESULT);
   vi.mocked(generateCompanyIntelligence).mockReturnValue({ ...MOCK_INTELLIGENCE });
