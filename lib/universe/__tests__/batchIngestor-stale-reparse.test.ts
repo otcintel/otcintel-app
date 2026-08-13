@@ -505,3 +505,106 @@ describe('stale-accession reprocessing guarantee', () => {
     expect(reparseStaleFiling).not.toHaveBeenCalled();
   });
 });
+
+describe('counter increments for targeted stale reparses', () => {
+  it('C1. one targeted success: filingsDownloaded +1, filingsParsed +1', async () => {
+    vi.mocked(ingestTicker).mockResolvedValue({ ...PIPELINE_RESULT_WITHOUT_S3, normalized: [], errors: [] });
+
+    const run = await runBatchIngestion({ tickers: ['WRAP'] });
+
+    expect(run.filingsDownloaded).toBe(1);
+    expect(run.filingsParsed).toBe(1);
+  });
+
+  it('C2. two targeted successes: filingsDownloaded +2, filingsParsed +2', async () => {
+    const STALE_S3_B: NormalizedFiling = {
+      ...WRAP_STALE_S3,
+      accessionNumber: '0001493152-24-000099',
+      filedAt:         '2024-12-01',
+    };
+    const REPARSED_S3_B: NormalizedFiling = { ...STALE_S3_B, parserVersion: PARSER_VERSION };
+
+    vi.mocked(getStaleFilings).mockReturnValue([WRAP_STALE_S3, STALE_S3_B]);
+    vi.mocked(ingestTicker).mockResolvedValue({ ...PIPELINE_RESULT_WITHOUT_S3, normalized: [], errors: [] });
+    vi.mocked(reparseStaleFiling)
+      .mockResolvedValueOnce(WRAP_REPARSED_S3)
+      .mockResolvedValueOnce(REPARSED_S3_B);
+
+    const run = await runBatchIngestion({ tickers: ['WRAP'] });
+
+    expect(run.filingsDownloaded).toBe(2);
+    expect(run.filingsParsed).toBe(2);
+  });
+
+  it('C3. one success + one failure: filingsDownloaded +1, filingsParsed +1, non-fatal', async () => {
+    const STALE_S3_B: NormalizedFiling = {
+      ...WRAP_STALE_S3,
+      accessionNumber: '0001493152-24-000099',
+      filedAt:         '2024-12-01',
+    };
+
+    vi.mocked(getStaleFilings).mockReturnValue([WRAP_STALE_S3, STALE_S3_B]);
+    vi.mocked(ingestTicker).mockResolvedValue({ ...PIPELINE_RESULT_WITHOUT_S3, normalized: [], errors: [] });
+    vi.mocked(reparseStaleFiling)
+      .mockResolvedValueOnce(WRAP_REPARSED_S3)
+      .mockRejectedValueOnce(new Error('EDGAR 503'));
+
+    const run = await runBatchIngestion({ tickers: ['WRAP'] });
+
+    expect(run.filingsDownloaded).toBe(1);
+    expect(run.filingsParsed).toBe(1);
+    expect(run.companiesFailed).toBe(0);
+  });
+
+  it('C4. normal discovery reparsed stale filing: not double-counted in run counters', async () => {
+    // Normal pipeline returned the S-3 in result.normalized with fetched=1, parsed=1.
+    // Targeted loop deduplicates it (reparseStaleFiling not called).
+    // Counter should be exactly 1 (from ingestTicker), not 2.
+    vi.mocked(ingestTicker).mockResolvedValue({
+      ...PIPELINE_RESULT_WITHOUT_S3,
+      normalized: [WRAP_REPARSED_S3],
+      fetched:    1,
+      parsed:     1,
+      errors:     [],
+    });
+
+    const run = await runBatchIngestion({ tickers: ['WRAP'] });
+
+    expect(run.filingsDownloaded).toBe(1);
+    expect(run.filingsParsed).toBe(1);
+    expect(vi.mocked(reparseStaleFiling)).not.toHaveBeenCalled();
+  });
+
+  it('C5. no stale filings: counters unchanged from ingestTicker (0/0)', async () => {
+    vi.mocked(getStaleFilings).mockReturnValue([]);
+    vi.mocked(ingestTicker).mockResolvedValue({ ...PIPELINE_RESULT_WITHOUT_S3, normalized: [], errors: [] });
+
+    const run = await runBatchIngestion({ tickers: ['WRAP'] });
+
+    expect(run.filingsDownloaded).toBe(0);
+    expect(run.filingsParsed).toBe(0);
+    expect(vi.mocked(reparseStaleFiling)).not.toHaveBeenCalled();
+  });
+
+  it('C6. WRAP-style: 2 stale filings (S-3 + S-3/A) missed by pipeline → filingsDownloaded=2, filingsParsed=2', async () => {
+    const STALE_S3A: NormalizedFiling = {
+      ...WRAP_STALE_S3,
+      formType:        'S-3/A',
+      accessionNumber: '0001493152-25-027559',
+      filedAt:         '2025-12-12',
+    };
+    const REPARSED_S3A: NormalizedFiling = { ...STALE_S3A, parserVersion: PARSER_VERSION };
+
+    vi.mocked(getStaleFilings).mockReturnValue([WRAP_STALE_S3, STALE_S3A]);
+    vi.mocked(ingestTicker).mockResolvedValue({ ...PIPELINE_RESULT_WITHOUT_S3, normalized: [], errors: [] });
+    vi.mocked(reparseStaleFiling)
+      .mockResolvedValueOnce(WRAP_REPARSED_S3)
+      .mockResolvedValueOnce(REPARSED_S3A);
+
+    const run = await runBatchIngestion({ tickers: ['WRAP'] });
+
+    expect(run.filingsDownloaded).toBe(2);
+    expect(run.filingsParsed).toBe(2);
+    expect(vi.mocked(reparseStaleFiling)).toHaveBeenCalledTimes(2);
+  });
+});

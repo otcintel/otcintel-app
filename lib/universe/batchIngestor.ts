@@ -420,6 +420,8 @@ async function ingestOneCompany(
         try {
           const refreshed = await reparseStaleFiling(staling);
           result.normalized.push(refreshed);
+          result.fetched += 1;
+          if (refreshed.parseErrors.length === 0) result.parsed += 1;
           reparsedAccessions.add(staling.accessionNumber);
           if (opts.verbose) {
             console.log(
