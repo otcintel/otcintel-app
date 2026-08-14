@@ -236,6 +236,20 @@ export async function list(filters: ReviewItemFilters = {}): Promise<ReviewItem[
 }
 
 /**
+ * Retrieve one item by primary key. Returns undefined if not found.
+ */
+export async function getById(id: string): Promise<ReviewItem | undefined> {
+  const db = getClient();
+  const { data, error } = await db
+    .from('review_items')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  assertNoError(error, `reviewItems.getById(${id})`);
+  return data ? rowToItem(data as ReviewItemRow) : undefined;
+}
+
+/**
  * Retrieve one item by dedup key. Returns undefined if not found.
  */
 export async function getByDedupKey(dedupKey: string): Promise<ReviewItem | undefined> {
@@ -287,6 +301,7 @@ export async function updateStatus(
 export const postgresReviewItemsDb: IReviewItemsRepository = {
   upsertDetected,
   list,
+  getById,
   getByDedupKey,
   updateStatus,
   markResolvedIfAbsent,

@@ -31,6 +31,7 @@ let _reviewItems:        IReviewItemsRepository | null = null;
 const _noOpReviewItemsRepo: IReviewItemsRepository = {
   async upsertDetected()       { /* filesystem: review items require Postgres */ },
   async list()                 { return []; },
+  async getById()              { return undefined; },
   async getByDedupKey()        { return undefined; },
   async updateStatus()         { /* no-op */ },
   async markResolvedIfAbsent() { /* no-op */ },

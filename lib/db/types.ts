@@ -126,6 +126,7 @@ export interface IFinancialSnapshotsRepository {
 export interface IReviewItemsRepository {
   upsertDetected(items: ReviewItemInput[]): Promise<void>;
   list(filters?: ReviewItemFilters): Promise<ReviewItem[]>;
+  getById(id: string): Promise<ReviewItem | undefined>;
   getByDedupKey(dedupKey: string): Promise<ReviewItem | undefined>;
   updateStatus(id: string, status: ReviewStatus, resolutionNote?: string): Promise<void>;
   markResolvedIfAbsent(activeDedupKeys: string[], ticker?: string): Promise<void>;

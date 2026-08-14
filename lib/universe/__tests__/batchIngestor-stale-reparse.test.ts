@@ -292,6 +292,7 @@ function makeReviewItemsRepo(): IReviewItemsRepository {
   return {
     upsertDetected:       vi.fn().mockResolvedValue(undefined),
     list:                 vi.fn().mockResolvedValue([]),
+    getById:              vi.fn().mockResolvedValue(undefined),
     getByDedupKey:        vi.fn().mockResolvedValue(undefined),
     updateStatus:         vi.fn().mockResolvedValue(undefined),
     markResolvedIfAbsent: vi.fn().mockResolvedValue(undefined),

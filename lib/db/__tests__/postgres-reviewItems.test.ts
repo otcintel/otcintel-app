@@ -77,6 +77,7 @@ function makeDbRow(overrides: Record<string, unknown> = {}) {
 import {
   upsertDetected,
   list,
+  getById,
   getByDedupKey,
   updateStatus,
   markResolvedIfAbsent,
@@ -134,6 +135,41 @@ describe('reviewItems.list', () => {
 
     const items = await list();
     expect(items).toHaveLength(0);
+  });
+});
+
+describe('reviewItems.getById', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('returns the item when found', async () => {
+    const row = makeDbRow();
+    const mockDb = { from: vi.fn() };
+    const chain = {
+      select:      vi.fn().mockReturnThis(),
+      eq:          vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: row, error: null }),
+    };
+    mockDb.from.mockReturnValue(chain);
+    vi.mocked(getClient).mockReturnValue(mockDb as unknown as ReturnType<typeof getClient>);
+
+    const item = await getById('uuid-001');
+    expect(item).toBeDefined();
+    expect(item!.id).toBe('uuid-001');
+    expect(item!.anomalyType).toBe('unknown_financing_type');
+  });
+
+  it('returns undefined when not found', async () => {
+    const mockDb = { from: vi.fn() };
+    const chain = {
+      select:      vi.fn().mockReturnThis(),
+      eq:          vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    mockDb.from.mockReturnValue(chain);
+    vi.mocked(getClient).mockReturnValue(mockDb as unknown as ReturnType<typeof getClient>);
+
+    const item = await getById('nonexistent-id');
+    expect(item).toBeUndefined();
   });
 });
 

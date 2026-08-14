@@ -236,6 +236,7 @@ function makeReviewItemsRepo(): IReviewItemsRepository {
   return {
     upsertDetected:       vi.fn().mockResolvedValue(undefined),
     list:                 vi.fn().mockResolvedValue([]),
+    getById:              vi.fn().mockResolvedValue(undefined),
     getByDedupKey:        vi.fn().mockResolvedValue(undefined),
     updateStatus:         vi.fn().mockResolvedValue(undefined),
     markResolvedIfAbsent: vi.fn().mockResolvedValue(undefined),
@@ -423,6 +424,7 @@ describe('Phase 1B: anomaly detector wired into batch ingestion', () => {
     const noOpRepo: IReviewItemsRepository = {
       upsertDetected:       vi.fn().mockResolvedValue(undefined),
       list:                 vi.fn().mockResolvedValue([]),
+      getById:              vi.fn().mockResolvedValue(undefined),
       getByDedupKey:        vi.fn().mockResolvedValue(undefined),
       updateStatus:         vi.fn().mockResolvedValue(undefined),
       markResolvedIfAbsent: vi.fn().mockResolvedValue(undefined),
